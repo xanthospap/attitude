@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# lock files
+uv.lock
+
 # IDE specific files
 .idea/
 .vscode/
