@@ -33,15 +33,10 @@ The output file is a space delimited tabular file.  The columns depend on the sa
 
 
 #### Jason satellites
-
-```
-MJD Q0 Q1 Q2 Q3 LP RP
-```
+`MJD Q0 Q1 Q2 Q3 LP RP`
 
 #### Sentinel satellites
-```
-MJD Q0 Q1 Q2 Q3
-```
+`MJD Q0 Q1 Q2 Q3`
 
 ### Caveat
 If the "working" directory is not empty, the software will concatenate ALL available quaternion
@@ -54,6 +49,7 @@ Provide guidelines for contributing to your project. -->
 
 ## License
 Licensed under the MIT License.  See [LICENSE](LICENSE).
+
 
 
 ---
