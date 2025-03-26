@@ -9,11 +9,11 @@
 # SATELLITE = "ja3"
 # SATELLITE = "s3a"
 # SATELLITE = "s3b"
-SATELLITE = "s6a"
+# SATELLITE = "s6a"
 
 # NOTE:
 # Enter a valid path for storing the quaternion files.
-SAVE_DIR = f"./q/{SATELLITE}"  # base directory for quaternion files
+# SAVE_DIR = f"./q/{SATELLITE}"  # base directory for quaternion files
 
 # NOTE:
 # Maximum allowed gap in seconds (for Sentinel satellites mostly).
@@ -49,15 +49,16 @@ SATELLITE_INFO = {
     }
 }
 
-SAT_NAME = SATELLITE_INFO[SATELLITE]["name"]
-CUTOFF_YEAR = SATELLITE_INFO[SATELLITE]["launch_year"]
-BASE_URL = SATELLITE_INFO[SATELLITE]["base_url"]
-DATA_TYPES = SATELLITE_INFO[SATELLITE]["data_types"]
+# SAT_NAME = SATELLITE_INFO[SATELLITE]["name"]
+def CUTOFF_YEAR(satellite):
+    return SATELLITE_INFO[SATELLITE]["launch_year"]
+# BASE_URL = SATELLITE_INFO[SATELLITE]["base_url"]
+# DATA_TYPES = SATELLITE_INFO[SATELLITE]["data_types"]
 
 
-__all__ = (
-    "SATELLITE",
-    "SAT_NAME", "CUTOFF_YEAR", "BASE_URL", "DATA_TYPES",
-    "SAVE_DIR",
-    "GAP_THRESHOLD",
-)
+#__all__ = (
+#    "SATELLITE",
+#    "SAT_NAME", "CUTOFF_YEAR", "BASE_URL", "DATA_TYPES",
+#    "SAVE_DIR",
+#    "GAP_THRESHOLD",
+#)

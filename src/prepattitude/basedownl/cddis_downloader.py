@@ -12,33 +12,26 @@ import datetime
 import logging
 import multiprocessing
 import pathlib
-
 import requests
 from opnieuw import retry
+from os.path import exists
 
-from configuration import SATELLITE, BASE_URL, SAVE_DIR, DATA_TYPES
+from prepattitude.configuration import SATELLITE_INFO
 
-# This is to catch the None data type of other satellites (e.g. Sentinels)
-try:
-    DATA_TYPE = DATA_TYPES[0]
-except TypeError:
-    DATA_TYPE = None
-
-
-LOGGING_LEVEL = logging.INFO
-# LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
+# LOGGING_LEVEL = logging.INFO
+LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
-    style='{',
-    format='{levelname}: {name} ({funcName}) [{lineno}]:  {message}'
+    style="{",
+    format="{levelname}: {name} ({funcName}) [{lineno}]:  {message}",
 )
 
 
 class CDDISDownloader:
     """Downloader object."""
 
-    def __init__(self, satellite: str = SATELLITE, base_url: str = BASE_URL) -> None:
+    def __init__(self, satellite: str, base_url: str) -> None:
         self._satellite = satellite
         self._base_url = base_url
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -157,17 +150,25 @@ Please, select a different directory to save the files.
     def download_data(
         self,
         date_ranges: list[list[datetime.date]],
-        save_dir: str = SAVE_DIR,
-        data_type: str = DATA_TYPES,
-    ) -> None:
+        save_dir: str,
+        data_type: str,
+    ) -> list[str]:
         """Download data for the given date and save it to the specified directory."""
         self._make_save_dir(save_dir)
+        downloaded_files = []
 
         for url in self._generate_urls(date_ranges, data_type):
             # infer local filename
             qfile = pathlib.Path(save_dir, url.split("/")[-1])
             try:
-                self._download_file(url, qfile, 1000)
+                self._logger.debug(
+                    f"Trying to download remote file {url} to local file {qfile}."
+                )
+                # only download if file not already present
+                if not exists(qfile):
+                    self._download_file(url, qfile, 1000)
+                downloaded_files.append(qfile)
                 self._logger.info(f"Data downloaded and saved to {qfile}.")
             except requests.exceptions.RequestException:
                 self._logger.error(f"Failed to download file {url}")
+        return downloaded_files

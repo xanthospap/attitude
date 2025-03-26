@@ -21,6 +21,11 @@ straightfowrward: \
 eg. `python attitude.py 2021-12-17` will produce the attitude file for the (extended) week that
 contains this date (2021-12-10 to 2021-12-19).
 
+### Note for CDDIS Web Archive
+For some satellites quaternion files are archived and downloaded from [CDDIS](https://cddis.nasa.gov/) 
+(e.g. JASON[123] missions). To download these you will need a [.netrc](https://cddis.nasa.gov/Data_and_Derived_Products/CreateNetrcFile.html) 
+file.
+
 
 ## Output
 The output file is a space delimited tabular file.  The columns depend on the satellite "family".
