@@ -39,10 +39,11 @@ For some satellites quaternion files are archived and downloaded from [Copernicu
 file, placed at the user's home directory.
 
 ## Output
-The output file is a space delimited tabular file.  The columns depend on the satellite "family".
+The output file is a space delimited tabular file.  The columns depend on the satellite "family". Note that 
+the output file contains date/time information in the **TT timescale** (regardless of satellite or input file(s)).
 
-  - `MJDay` is Modified Julian day (integer),
-  - `SoD` are the seconds of day, i.e. seconds passed since the start of `MJDay` (fractional),
+  - `MJDay` is Modified Julian day (integer) in TT,
+  - `SoD` are the seconds of day, i.e. seconds passed since the start of `MJDay` (fractional) in TT,
   - `Q0` is the real part of the quaternion,
   - `Q1`, `Q2`, `Q3` are the imaginary parts,
   - `LP` and `RP` are the rotation angles of the left and right panel, respectively (Jason
@@ -50,12 +51,12 @@ The output file is a space delimited tabular file.  The columns depend on the sa
 
 ## Available Satellites:
 
-  Satellite Id| Name      |Launch Yr| Archive
-  ------------|-----------|---------|--------
-  `ja3`       |Jason-3    |2016     |[CDDIS](https://cddis.nasa.gov/archive/doris/ancillary/quaternions/ja3)
-  `s3a`       |Sentinel-3A|2016     |[Copernicus](https://dataspace.copernicus.eu/)
-  `s3b`       |Sentinel-3B|2018     |[Copernicus](https://dataspace.copernicus.eu/)
-  `s6a`       |Sentinel-6A|2020     |[Copernicus](https://dataspace.copernicus.eu/)
+  | Satellite Id | Name        | Launch Yr | Archive                                                                 |
+  | ------------ | ----------- | --------- | ----------------------------------------------------------------------- |
+  | `ja3`        | Jason-3     | 2016      | [CDDIS](https://cddis.nasa.gov/archive/doris/ancillary/quaternions/ja3) |
+  | `s3a`        | Sentinel-3A | 2016      | [Copernicus](https://dataspace.copernicus.eu/)                          |
+  | `s3b`        | Sentinel-3B | 2018      | [Copernicus](https://dataspace.copernicus.eu/)                          |
+  | `s6a`        | Sentinel-6A | 2020      | [Copernicus](https://dataspace.copernicus.eu/)                          |
 
 #### Jason satellites
 `MJDay SoD Q0 Q1 Q2 Q3 LP RP`

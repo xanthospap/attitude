@@ -18,8 +18,8 @@ from os.path import exists
 
 from prepattitude.configuration import SATELLITE_INFO
 
-# LOGGING_LEVEL = logging.INFO
-LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
+LOGGING_LEVEL = logging.INFO
+# LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
 
 logging.basicConfig(
     level=LOGGING_LEVEL,

@@ -43,7 +43,7 @@ def _uncompress_files(qfns: list[str]) -> list[str]:
                     try:
                         tgz.extract(member, filter="data")
                         ufiles.append(join(dirname(cfile), member.name))
-                        logger.info(f"Extracting file {member.name}.")
+                        logger.debug(f"Extracting file {member.name}.")
                     except tarfile.FilterError:
                         logger.error(
                             f"Error extracting file {member.name}. Check archive {cfile}."
@@ -62,7 +62,7 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
         "header": None,
     }
 
-    logger.info(f"Reading file {qfile}.")
+    logger.info(f"Reading quaternion file {qfile}.")
     # set useful columns
     match satellite:
         case "ja3":
@@ -104,15 +104,17 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     """
     logger.info("Fixing time scale.")
     # get time info from df
-    time_ = df["date_time"].to_numpy()
+    # time_ = df["date_time"].to_numpy()
     # change time scale to TT
     match satellite:
         case "ja3":
             # Jason quaternions are given at UTC times
-            tt = atime.Time(time_, scale="utc").tt
+            tt = atime.Time(df["date_time"].to_numpy(), scale="utc").tt
         case "s3a" | "s3b" | "s6a":
-            # Sentinel quaternions are given at GPST times, which is TAI
-            tt = atime.Time(time_, scale="tai").tt
+            # Sentinel quaternions are given at GPST times
+            tt = atime.Time(
+                (df["date_time"] + np.timedelta64(19, "s")).to_numpy(), scale="tai"
+            ).tt
     df["date_time"] = tt.to_value(format="datetime64")
     logger.debug(df)
     # set date_time as index (replaced)

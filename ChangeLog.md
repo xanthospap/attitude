@@ -8,3 +8,4 @@
     * Output date (is csv fiels) is now written as MJDay (integral) and Seconds of Day (fractional).
     * Setup available with `pip`.
     * Drop dependencies on `arrow`, `jplephem`, `matplotlib`, `scipy`, `seaborn`.
+    * Fixed bug when precessing Sentinel quaternions; time transformation is GPST to TT not TAI to TT.

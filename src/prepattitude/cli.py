@@ -70,7 +70,6 @@ parser.add_argument(
 
 def main():
     args = args = parser.parse_args()
-    # rawq = download_data(args.satellite, args.epoch.date(), args.save_dir)
     preprocess(
         args.satellite, download_data(args.satellite, args.epoch.date(), args.save_dir)
     )
