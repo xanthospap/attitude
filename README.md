@@ -51,7 +51,7 @@ The output file is a space delimited tabular file.  The columns depend on the sa
 ## Available Satellites:
 
   Satellite Id| Name      |Launch Yr| Archive
-  ------------+-----------+---------+--------
+  ------------|-----------|---------|--------
   `ja3`       |Jason-3    |2016     |[CDDIS](https://cddis.nasa.gov/archive/doris/ancillary/quaternions/ja3)
   `s3a`       |Sentinel-3A|2016     |[Copernicus](https://dataspace.copernicus.eu/)
   `s3b`       |Sentinel-3B|2018     |[Copernicus](https://dataspace.copernicus.eu/)
