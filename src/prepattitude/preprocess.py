@@ -133,8 +133,9 @@ def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
 
     For Jason satellites, also interpolate (linearly) solar panel angles.
     """
-    # make sure dataframe is ordered chronologically
-    df = df.sort_index()
+    # make sure dataframe is ordered chronologically, and everry duplicate
+    # (if any) is replaced by the (multi-occurancies) mean value(s)
+    df = df.sort_index().groupby(df.index).mean()
 
     # compute rotations
     rotations = df.loc[:, ["q0", "q1", "q2", "q3"]].to_numpy()
@@ -143,7 +144,6 @@ def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
 
     # create Slerp object
     times_ = atime.Time(df.index.values, scale="tt").mjd
-    logger.info(times_)
     slerp = Slerp(times_, rotations)
 
     # construct time array at constant intervals of N sec
