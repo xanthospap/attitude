@@ -26,6 +26,10 @@ For some satellites quaternion files are archived and downloaded from [CDDIS](ht
 (e.g. JASON[123] missions). To download these you will need a [.netrc](https://cddis.nasa.gov/Data_and_Derived_Products/CreateNetrcFile.html) 
 file.
 
+### Note for Copernicus Web Archive
+For some satellites quaternion files are archived and downloaded from [Copernicus](https://dataspace.copernicus.eu/) 
+(e.g. Sentinel missions). To download these you will need a [.s3cfg](https://documentation.dataspace.copernicus.eu/APIs/S3.html) 
+file, placed at the user's home directory.
 
 ## Output
 The output file is a space delimited tabular file.  The columns depend on the satellite "family".
@@ -38,10 +42,10 @@ The output file is a space delimited tabular file.  The columns depend on the sa
 
 
 #### Jason satellites
-`MJD Q0 Q1 Q2 Q3 LP RP`
+`MJDay SecondsOfDay Q0 Q1 Q2 Q3 LP RP`
 
 #### Sentinel satellites
-`MJD Q0 Q1 Q2 Q3`
+`MJDay SecondsOfDay Q0 Q1 Q2 Q3`
 
 ### Caveat
 If the "working" directory is not empty, the software will concatenate ALL available quaternion

@@ -153,7 +153,9 @@ Please, select a different directory to save the files.
         save_dir: str,
         data_type: str,
     ) -> list[str]:
-        """Download data for the given date and save it to the specified directory."""
+        """Download data for the given date and save it to the specified directory.
+        Returns the list of files downloaded (path + filename).
+        """
         self._make_save_dir(save_dir)
         downloaded_files = []
 

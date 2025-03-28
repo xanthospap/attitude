@@ -2,6 +2,9 @@
 --------------
 
     * For the main program, the date is now parsed as `-d' or `--date'.
-    * Added satellite choice as cmd argument.
-    * Downloader's download_data methods now return a list of strings, i.e. the downloaded file(s).
-    * Changed the executable name and definition in the toml file.
+    * Full list of options added to main program as command line options. `configuration.py` now only contains basic config info.
+    * Changed the executable name and definition(s) in the toml file.
+    * All `download_data` functions/methods now return a list of (downloaded, i.e. local) files.
+    * Output date (is csv fiels) is now written as MJDay (integral) and Seconds of Day (fractional).
+    * Setup available with `pip`.
+    * Drop dependencies on `arrow`, `jplephem`, `matplotlib`, `scipy`, `seaborn`.

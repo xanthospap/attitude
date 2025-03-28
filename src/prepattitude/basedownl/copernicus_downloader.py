@@ -14,6 +14,9 @@ import pathlib
 import boto3
 from prepattitude.configuration import SATELLITE_INFO
 
+from os.path import expanduser, join, isfile
+user_home = expanduser("~")
+
 LOGGING_LEVEL = logging.INFO
 # LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
 
@@ -39,7 +42,7 @@ class CopernicusDownloader:
 
         # parse configuration
         _cfg = {}
-        with open(".s3cfg") as fh:
+        with open(join(user_home, ".s3cfg"), 'r') as fh:
             for line in fh:
                 try:
                     key, value = line.split("=")
@@ -99,7 +102,8 @@ Please, select a different directory to save the files.
         for file in files:
             if not pathlib.Path(file.key).is_dir():
                 qfile = f"{target}/{file.key.split('/')[-1]}"
-                self._bucket.download_file(file.key, qfile)
+                if not isfile(qfile):
+                    self._bucket.download_file(file.key, qfile)
                 return qfile
 
     def download_data(
@@ -108,7 +112,9 @@ Please, select a different directory to save the files.
         save_dir: str,
         data_type: str = None,
     ) -> list[str]:
-        """Download data for the given date and save it to the specified directory."""
+        """Download data for the given date and save it to the specified directory.
+            Note that the data_type input parameter is ignored for Sentinel series.
+        """
         self._make_save_dir(save_dir)
 
         downloaded_files = []

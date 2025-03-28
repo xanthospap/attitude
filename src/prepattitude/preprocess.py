@@ -113,12 +113,17 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
         case "s3a" | "s3b" | "s6a":
             # Sentinel quaternions are given at GPST times, which is TAI
             tt = atime.Time(time_, scale="tai").tt
-    # replace date_time with new time scale
     df["date_time"] = tt.to_value(format="datetime64")
     logger.debug(df)
-
-    # set date_time as index
+    # set date_time as index (replaced)
     return df.set_index("date_time")
+
+
+def _time2mjd(time_array, scale="tt"):
+    t = atime.Time(time_array, format="datetime64", scale=scale)
+    mjd_days = t.mjd.astype(int)
+    sec_of_day = (t.mjd - mjd_days) * 86400
+    return mjd_days, sec_of_day
 
 
 def _interpolate(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
@@ -218,7 +223,12 @@ def _process_single_file(
     df = _interpolate(satellite, df)
 
     # convert time format
-    df.index = atime.Time(df.index.values, scale="tt").mjd
+    # df.index = atime.Time(df.index.values, scale="tt").mjd
+    mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
+    df["MJDay"] = mjd_days
+    df["SecOfDay"] = sec_of_day
+    # Reset index and set new multi-index
+    df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
     return df
 
@@ -229,7 +239,7 @@ def _process_jason_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
 
     # process the file pairs
     fileps = [
-        (file, file.replace("body", "qsolp"))
+        (file, file.replace("body", "solp"))
         for file in [str(f) for f in qfns]
         if "body" in file
     ]
@@ -274,6 +284,11 @@ def _process_sentinel_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
 def preprocess(satellite: str, qfns: list[str]) -> None:
     """Process quaternion files and create CSV files."""
     logger.info(f"Processing {satellite} quaternion files.")
+    if qfns == []:
+        logger.error(
+            f"Got empty list of downloaded files (sat. {satellite}). Nothing to do."
+        )
+        return
     match satellite:
         case "ja3":
             df = _process_jason_files(satellite, qfns)
@@ -284,4 +299,4 @@ def preprocess(satellite: str, qfns: list[str]) -> None:
     save_dir = dirname(qfns[0])
     csv_file = f"{save_dir}/qua_{satellite}.csv"
     logger.info(f"Quaternions file is saved to {csv_file}.")
-    df.to_csv(csv_file, sep=" ", float_format="%0.9f", header=False)
+    df.to_csv(csv_file, sep=" ", float_format="%.12e", header=False)

@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 def download_data(satellite: str, the_date: str, save_dir: str) -> list[str]:
-    """Construct a Downloader object and download data."""
+    """Construct a Downloader object and download data.
+    Returns the list of daownloaded files (i.e. local files, including path).
+    """
     dranges = DateCalculator(the_date).date_ranges
     logger.debug(dranges)
 
@@ -39,7 +41,6 @@ Downloading quaternions for the "extended" week around {the_date} for satellite 
         """
     )
 
-    localq = []
     match satellite:
         case "ja3":
             downloader = CDDISDownloader(
@@ -50,10 +51,8 @@ Downloading quaternions for the "extended" week around {the_date} for satellite 
                 satellite, SATELLITE_INFO[satellite]["base_url"]
             )
 
-    try:
-        for data_type in SATELLITE_INFO[satellite]["data_types"]:
-            localq += downloader.download_data(dranges, save_dir, data_type)
-    except TypeError:
-        downloader.download_data(dranges, save_dir)
+    localq = []
+    for data_type in SATELLITE_INFO[satellite]["data_types"]:
+        localq += downloader.download_data(dranges, save_dir, data_type)
 
     return localq

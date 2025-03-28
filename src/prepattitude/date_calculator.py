@@ -9,8 +9,6 @@ import datetime
 import logging
 from dataclasses import dataclass
 
-# import arrow
-
 from prepattitude.configuration import CUTOFF_YEAR
 from prepattitude.exceptions import FutureDateError, UnsupportedYearError
 

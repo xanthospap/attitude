@@ -33,19 +33,19 @@ SATELLITE_INFO = {
         "name": "Sentinel-3A",
         "launch_year": 2016,
         "base_url": "Sentinel-3/AUX/AUX_PROQUA",
-        "data_types": None
+        "data_types": ["qbody"]
     },
     "s3b": {
         "name": "Sentinel-3B",
         "launch_year": 2018,
         "base_url": "Sentinel-3/AUX/AUX_PROQUA",
-        "data_types": None
+        "data_types": ["qbody"]
     },
     "s6a": {
         "name": "Sentinel-6A",
         "launch_year": 2020,
         "base_url": "Sentinel-6/AUX/AUX_PROQUA",
-        "data_types": None
+        "data_types": ["qbody"]
     }
 }
 
