@@ -42,7 +42,7 @@ Downloading quaternions for the "extended" week around {the_date} for satellite 
     )
 
     match satellite:
-        case "ja3":
+        case "ja1" | "ja2" | "ja3":
             downloader = CDDISDownloader(
                 satellite, SATELLITE_INFO[satellite]["base_url"]
             )

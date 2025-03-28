@@ -10,6 +10,18 @@ GAP_THRESHOLD = 10
 # ***
 
 SATELLITE_INFO = {
+    "ja1": {
+        "name": "Jason-1",
+        "launch_year": 2001,
+        "base_url": "https://cddis.nasa.gov/archive/doris/ancillary/quaternions",
+        "data_types": ["qbody", "qsolp"],
+    },
+    "ja2": {
+        "name": "Jason-2",
+        "launch_year": 2008,
+        "base_url": "https://cddis.nasa.gov/archive/doris/ancillary/quaternions",
+        "data_types": ["qbody", "qsolp"],
+    },
     "ja3": {
         "name": "Jason-3",
         "launch_year": 2016,

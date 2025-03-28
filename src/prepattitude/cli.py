@@ -74,7 +74,7 @@ parser.add_argument(
     metavar="SATELLITE",
     required=True,
     dest="satellite",
-    choices=["ja3", "s3a", "s3b", "s6a"],
+    choices=["ja1", "ja2", "ja3", "s3a", "s3b", "s6a"],
     help="Sellect satellite.",
 )
 

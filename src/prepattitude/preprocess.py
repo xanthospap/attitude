@@ -65,7 +65,7 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
     logger.info(f"Reading quaternion file {qfile}.")
     # set useful columns
     match satellite:
-        case "ja3":
+        case "ja1" | "ja2" | "ja3":
             try:
                 sv_args = {
                     "usecols": [0, 1, 3, 6, 9, 12],
@@ -105,7 +105,7 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     logger.info("Fixing time scale.")
     # change time scale to TT
     match satellite:
-        case "ja3":
+        case "ja1" | "ja2" | "ja3":
             # Jason quaternions are given at UTC times
             tt = atime.Time(df["date_time"].to_numpy(), scale="utc").tt
         case "s3a" | "s3b" | "s6a":
@@ -154,7 +154,7 @@ def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
     rotations = slerp(times)
 
     # Jason satellite; interpolate solar panel angles
-    if satellite == "ja3":
+    if satellite.startswith("ja"):
         logger.info("Interpolating solar panel angles.")
 
         # TODO: FIX THIS HACK!
@@ -186,7 +186,7 @@ def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
     )
 
     # Jason satellite; merge
-    if satellite == "ja3":
+    if satellite.startswith("ja"):
         df = pd.merge(df, df_, left_index=True, right_index=True)
 
     return df
@@ -287,7 +287,7 @@ def preprocess(satellite: str, Nsec: float, qfns: list[str]) -> None:
         )
         return
     match satellite:
-        case "ja3":
+        case "ja1" | "ja2" | "ja3":
             df = _process_jason_files(satellite, Nsec, qfns)
         case "s3a" | "s3b" | "s6a":
             df = _process_sentinel_files(satellite, Nsec, qfns)
