@@ -103,8 +103,6 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     Output is MJD (float) in TT.
     """
     logger.info("Fixing time scale.")
-    # get time info from df
-    # time_ = df["date_time"].to_numpy()
     # change time scale to TT
     match satellite:
         case "ja3":
@@ -128,27 +126,15 @@ def _time2mjd(time_array, scale="tt"):
     return mjd_days, sec_of_day
 
 
-def _interpolate(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
+def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
     """
     Compute scipy.spatial.transform.Rotation objects from quaternions and
-    interpolate at 1 sec interval using scipy.spatial.transform.Slerp.
+    interpolate at N sec interval using scipy.spatial.transform.Slerp.
 
     For Jason satellites, also interpolate (linearly) solar panel angles.
     """
-    # get times
-    times = df.index.values
-    logger.debug(times)
-
-    # do we need to interpolate?
-    # usually, Sentinel files are already indexed at 1s intervals
-    if SATELLITE_INFO[satellite]["name"].startswith("Sentinel"):
-        # first difference of indices in s
-        dt = np.diff(times) / np.timedelta64(1, "s")
-        if np.max(dt) < GAP_THRESHOLD:
-            logger.info(
-                f"Skipping interpolation; no data gaps exceeding {GAP_THRESHOLD}s found."
-            )
-            return df
+    # make sure dataframe is ordered chronologically
+    df = df.sort_index()
 
     # compute rotations
     rotations = df.loc[:, ["q0", "q1", "q2", "q3"]].to_numpy()
@@ -156,12 +142,12 @@ def _interpolate(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     logger.debug(rotations)
 
     # create Slerp object
-    times_ = atime.Time(times, scale="tt").mjd
+    times_ = atime.Time(df.index.values, scale="tt").mjd
+    logger.info(times_)
     slerp = Slerp(times_, rotations)
 
-    # construct time array at constant intervals of 1 sec for one day
-    mjd = np.floor(times_.mean())
-    times = np.arange(start=mjd, stop=mjd + 1, step=1.0 / 86400.0)
+    # construct time array at constant intervals of N sec
+    times = np.arange(start=times_[0], stop=times_[-1], step=Nsec / 86400.0)
 
     # interpolate
     logger.info("Interpolating quaternions.")
@@ -218,45 +204,51 @@ def _process_single_file(
         df_ = _read_single_file(satellite, solp_file)
         df = pd.merge(df, df_, how="left", on="date_time").sort_values("date_time")
 
-    # fix time scale
-    df = _fix_time(satellite, df)
+    # fix time scale and return data frame
+    return _fix_time(satellite, df)
 
+
+def _process_batch(satellite: str, Nsec, df):
     # interpolate at regular intervals
-    df = _interpolate(satellite, df)
+    df = _interpolate(satellite, df, Nsec)
 
     # convert time format
-    # df.index = atime.Time(df.index.values, scale="tt").mjd
     mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
     df["MJDay"] = mjd_days
     df["SecOfDay"] = sec_of_day
-    # Reset index and set new multi-index
-    df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
-    return df
+    return df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
 
-def _process_jason_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
+def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.DataFrame:
     """Walk through the given file list, read, process and concatenate quaternion files."""
     DATA_TYPES = SATELLITE_INFO[satellite]["data_types"]
 
-    # process the file pairs
+    # make the file pairs (body+solar panels)
     fileps = [
         (file, file.replace("body", "solp"))
         for file in [str(f) for f in qfns]
         if "body" in file
     ]
+
+    # process each single file pair
     dfs = []
     for q in fileps:
         dfs.append(_process_single_file(satellite, *q))
 
+    # interpolate merged dataframes
+    df = _process_batch(satellite, Nsec, pd.concat(dfs))
+
     # remove raw files
     [remove(f) for f in qfns if exists(f)]
 
-    # concatenate to a single pandas DataFrame
-    return pd.concat(dfs)
+    # return a single pandas DataFrame
+    return df
 
 
-def _process_sentinel_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
+def _process_sentinel_files(
+    satellite: str, Nsec: float, qfns: list[str]
+) -> pd.DataFrame:
     """Walk through the given file list, read, process and concatenate quaternion files."""
     # extract the DBL files
     qfns = _uncompress_files(qfns)
@@ -266,11 +258,14 @@ def _process_sentinel_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
     for qfile in qfns:
         dfs.append(_process_single_file(satellite, qfile))
 
+    # interpolate merged dataframes
+    df = _process_batch(satellite, Nsec, pd.concat(dfs))
+
     # delete DBL files
     [remove(f) for f in qfns if exists(f)]
 
-    # concatenate to a single pandas DataFrame
-    return pd.concat(dfs)
+    # return a single pandas DataFrame
+    return df
 
 
 # def _serialize(satellite: str, save_dir: str, df: pd.DataFrame) -> None:
@@ -283,7 +278,7 @@ def _process_sentinel_files(satellite: str, qfns: list[str]) -> pd.DataFrame:
 #    return pd.read_pickle(pathlib.Path(save_dir, f"qua_{satellite}.pkl"))
 
 
-def preprocess(satellite: str, qfns: list[str]) -> None:
+def preprocess(satellite: str, Nsec: float, qfns: list[str]) -> None:
     """Process quaternion files and create CSV files."""
     logger.info(f"Processing {satellite} quaternion files.")
     if qfns == []:
@@ -293,9 +288,9 @@ def preprocess(satellite: str, qfns: list[str]) -> None:
         return
     match satellite:
         case "ja3":
-            df = _process_jason_files(satellite, qfns)
+            df = _process_jason_files(satellite, Nsec, qfns)
         case "s3a" | "s3b" | "s6a":
-            df = _process_sentinel_files(satellite, qfns)
+            df = _process_sentinel_files(satellite, Nsec, qfns)
 
     # output
     save_dir = dirname(qfns[0])

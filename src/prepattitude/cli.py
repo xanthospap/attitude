@@ -58,6 +58,17 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "-n",
+    "--every-sec",
+    metavar="NSEC",
+    dest="nsec",
+    required=False,
+    default=5,
+    type=int,
+    help="Interval in seconds for attitude (quaternion+angles) interpolation.",
+)
+
+parser.add_argument(
     "-s",
     "--satellite",
     metavar="SATELLITE",
@@ -71,5 +82,7 @@ parser.add_argument(
 def main():
     args = args = parser.parse_args()
     preprocess(
-        args.satellite, download_data(args.satellite, args.epoch.date(), args.save_dir)
+        args.satellite,
+        args.nsec,
+        download_data(args.satellite, args.epoch.date(), args.save_dir),
     )
