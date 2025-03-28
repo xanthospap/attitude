@@ -2,18 +2,18 @@
 
 
 <!-- ## Introduction -->
-This project prepares satellite attitude files to be used in Precise Orbit Determination (POD). \
+This project prepares satellite attitude files to be used in Precise Orbit Determination (POD). 
 Currently, it uses quaternions and produces attitude files that span a full (GPS)
 week<sup>[1](#myfootnote1)</sup> that contains a given date.
 
 
 ## Installation
-The easiest way to install the package is using [uv](https://github.com/astral-sh/uv). \
-After downloading, you simply have to run \
-`uv sync` \
+The easiest way to install the package is using [uv](https://github.com/astral-sh/uv). 
+After downloading, you simply have to run 
+`uv sync` 
 and you're good to go.
 
-Alternatively, you can use [pip](https://pypi.org/project/pip/) to install the project, via \
+Alternatively, you can use [pip](https://pypi.org/project/pip/) to install the project, via 
 `pip install .` (or `pip install -e .` for an editable version).
 
 
@@ -23,9 +23,9 @@ straightfowrward: \
 `python attitude.py <date>` \
 eg. `python attitude.py 2021-12-17` will produce the attitude file for the (extended) week that
 contains this date (2021-12-10 to 2021-12-19).~~
-After installation, you'll have an executable named `prepattitude` in your PATH. The program contains \
-a help message, triggered with `-h` or `--help`. Basic usage includes adding a satellite name/id and \
-the date of interest, e.g. `prepattitude -e 2021-12-17 -s s3b`. This command will produce the attitude \
+After installation, you'll have an executable named `prepattitude` in your PATH. The program contains 
+a help message, triggered with `-h` or `--help`. Basic usage includes adding a satellite name/id and 
+the date of interest, e.g. `prepattitude -e 2021-12-17 -s s3b`. This command will produce the attitude 
 file for the (extended) week that contains this date (2021-12-10 to 2021-12-19).
 
 ### Note for CDDIS Web Archive
