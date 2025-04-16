@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 prepattitude = "prepattitude.cli:main"
+fitsatgeometry = "cnesfr.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -65,7 +65,14 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
     logger.info(f"Reading quaternion file {qfile}.")
     # set useful columns
     match satellite:
-        case "ja1" | "ja2" | "ja3":
+        case "ja1":
+            usecols = [0, 1, 2, 3, 4, 5] if "qbody" in qfile else [0, 1, 2, 3]
+            sv_args = {
+                "usecols": usecols,
+                "names": ["_date", "_time"] + ([f"q{i}" for i in range(4)] if len(usecols)>4 else ["left_panel", "right_panel"]),
+            }
+            df = pd.read_csv(qfile, **kwargs, **sv_args)
+        case "ja2" | "ja3":
             try:
                 sv_args = {
                     "usecols": [0, 1, 3, 6, 9, 12],
@@ -240,7 +247,7 @@ def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.Dat
     df = _process_batch(satellite, Nsec, pd.concat(dfs))
 
     # remove raw files
-    [remove(f) for f in qfns if exists(f)]
+    [ remove(f) for f in qfns if exists(f) ]
 
     # return a single pandas DataFrame
     return df
@@ -266,17 +273,6 @@ def _process_sentinel_files(
 
     # return a single pandas DataFrame
     return df
-
-
-# def _serialize(satellite: str, save_dir: str, df: pd.DataFrame) -> None:
-#    """Serialize the concatenated quaternion data to pickle."""
-#    df.to_pickle(pathlib.Path(save_dir, f"qua_{satellite}.pkl"))
-
-
-# def _deserialize(satellite: str, save_dir: str) -> pd.DataFrame:
-#    """Read a pandas DataFrame from a pickle file."""
-#    return pd.read_pickle(pathlib.Path(save_dir, f"qua_{satellite}.pkl"))
-
 
 def preprocess(satellite: str, Nsec: float, qfns: list[str]) -> None:
     """Process quaternion files and create CSV files."""
