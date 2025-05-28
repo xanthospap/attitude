@@ -36,13 +36,14 @@ def _uncompress_files(qfns: list[str]) -> list[str]:
     """Safely uncompress files in its directory."""
     ufiles = []
     for cfile in qfns:
+        target_dir = dirname(cfile)
         with tarfile.open(cfile, "r") as tgz:
             members = tgz.getmembers()
             for member in members:
                 if member.name.endswith(".DBL"):
                     try:
-                        tgz.extract(member, filter="data")
-                        ufiles.append(join(dirname(cfile), member.name))
+                        tgz.extract(member, path=target_dir, filter="data")
+                        ufiles.append(join(target_dir, member.name))
                         logger.debug(f"Extracting file {member.name}.")
                     except tarfile.FilterError:
                         logger.error(
@@ -69,7 +70,12 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
             usecols = [0, 1, 2, 3, 4, 5] if "qbody" in qfile else [0, 1, 2, 3]
             sv_args = {
                 "usecols": usecols,
-                "names": ["_date", "_time"] + ([f"q{i}" for i in range(4)] if len(usecols)>4 else ["left_panel", "right_panel"]),
+                "names": ["_date", "_time"]
+                + (
+                    [f"q{i}" for i in range(4)]
+                    if len(usecols) > 4
+                    else ["left_panel", "right_panel"]
+                ),
             }
             df = pd.read_csv(qfile, **kwargs, **sv_args)
         case "ja2" | "ja3":
@@ -247,7 +253,7 @@ def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.Dat
     df = _process_batch(satellite, Nsec, pd.concat(dfs))
 
     # remove raw files
-    [ remove(f) for f in qfns if exists(f) ]
+    [remove(f) for f in qfns if exists(f)]
 
     # return a single pandas DataFrame
     return df
@@ -273,6 +279,7 @@ def _process_sentinel_files(
 
     # return a single pandas DataFrame
     return df
+
 
 def preprocess(satellite: str, Nsec: float, qfns: list[str]) -> None:
     """Process quaternion files and create CSV files."""
