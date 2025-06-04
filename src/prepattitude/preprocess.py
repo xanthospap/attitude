@@ -104,7 +104,6 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
     df["date_time"] = pd.to_datetime(
         date_col + " " + time_col, format="%Y/%m/%d %H:%M:%S.%f"
     )
-    # df.set_index('date_time', inplace=True)
 
     return df.drop(columns=["_date", "_time"])
 
@@ -139,7 +138,9 @@ def _time2mjd(time_array, scale="tt"):
     return mjd_days, sec_of_day
 
 
-def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
+def _interpolate(
+    satellite: str, df: pd.DataFrame, Nsec: float, times=None
+) -> pd.DataFrame:
     """
     Compute scipy.spatial.transform.Rotation objects from quaternions and
     interpolate at N sec interval using scipy.spatial.transform.Slerp.
@@ -150,59 +151,66 @@ def _interpolate(satellite: str, df: pd.DataFrame, Nsec: float) -> pd.DataFrame:
     # (if any) is replaced by the (multi-occurancies) mean value(s)
     df = df.sort_index().groupby(df.index).mean()
 
-    # compute rotations
-    rotations = df.loc[:, ["q0", "q1", "q2", "q3"]].to_numpy()
-    rotations = R.concatenate([R.from_quat(q, scalar_first=True) for q in rotations])
-    logger.debug(rotations)
-
-    # create Slerp object
-    times_ = atime.Time(df.index.values, scale="tt").mjd
-    slerp = Slerp(times_, rotations)
+    quaternion_columns = ["q0", "q1", "q2", "q3"]
+    angle_columns = ["left_panel", "right_panel"]
 
     # construct time array at constant intervals of N sec
-    times = np.arange(start=times_[0], stop=times_[-1], step=Nsec / 86400.0)
+    if times is None:
+        times_ = atime.Time(df.index.values, scale="tt").mjd
+        times = np.arange(
+            start=times_[0],
+            stop=times_[-1],
+            step=Nsec / 86400.0,
+        )
 
-    # interpolate
-    logger.info("Interpolating quaternions.")
-    rotations = slerp(times)
+    if all(col in df.columns for col in quaternion_columns):
+        # Case A: Interpolate quaternions:
+        # ----------------------------------------------------------------------
+        logger.info("Interpolating body quaternions.")
+        # compute rotations
+        rotations = df.loc[:, ["q0", "q1", "q2", "q3"]].to_numpy()
+        rotations = R.concatenate(
+            [R.from_quat(q, scalar_first=True) for q in rotations]
+        )
+        # create Slerp object
+        slerp = Slerp(times_, rotations)
+        # interpolate
+        rotations = slerp(times)
+        # construct the new DataFrame
+        df = pd.DataFrame(
+            data=rotations.as_quat(scalar_first=True),
+            index=times,
+            columns=[f"q{i}" for i in range(4)],
+        )
 
-    # Jason satellite; interpolate solar panel angles
-    if satellite.startswith("ja"):
+    elif all(col in df.columns for col in angle_columns):
+        # Case B: Interpolate angles:
+        # ----------------------------------------------------------------------
         logger.info("Interpolating solar panel angles.")
-
-        # TODO: FIX THIS HACK!
-        # Make it work with np.datetime64 indices!
-        df.index = times_
-
-        df_ = (
+        print("original df=")
+        print(df)
+        # Convert those MJD times back to datetime for reindexing
+        new_datetimes = atime.Time(times, format="mjd", scale="tt").to_datetime()
+        # Reindex and interpolate
+        df_interp = (
             df[["left_panel", "right_panel"]]
-            .reindex(df.index.union(times))
-            .interpolate(method="polynomial", order=1)
+            .reindex(df.index.union(new_datetimes))  # combine original and new times
+            .interpolate(
+                method="time"
+            )  # time-based interpolation (equivalent to linear in time)
         )
-        df_ = df_[~df_.index.isin(df.index.difference(times))]
-        df_.index = atime.Time(df_.index.to_numpy(), format="mjd", scale="tt").to_value(
-            format="datetime64"
-        )
-        logger.debug(df_.shape, df_.columns, df_.index)
+        # Select only the rows corresponding to your target times
+        df = df_interp.loc[new_datetimes]
+        df.index = times
+        print("resulting df=")
+        print(df)
 
-    # construct the new DataFrame
-    df = pd.DataFrame(
-        data=rotations.as_quat(scalar_first=True),
-        index=times,
-        columns=[f"q{i}" for i in range(4)],
-    )
-    logger.debug(df.shape, df.columns, df.index)
-
-    # fix index
+    # print(df)
+    # fix index (MJD to datetime64)
     df.index = atime.Time(df.index.to_numpy(), format="mjd", scale="tt").to_value(
         format="datetime64"
     )
-
-    # Jason satellite; merge
-    if satellite.startswith("ja"):
-        df = pd.merge(df, df_, left_index=True, right_index=True)
-
-    return df
+    return df, times
 
 
 def _process_single_file(
@@ -210,27 +218,17 @@ def _process_single_file(
 ) -> pd.DataFrame:
     """Process a single quaternion file, or a pair (body -- panels) in case of Jason satellite."""
     # read "body" q-file
-    df = _read_single_file(satellite, qfile)
+    df_body = _read_single_file(satellite, qfile)
 
-    # Jason satellite; read and merge "panels" file
-    if solp_file is not None:
-        df_ = _read_single_file(satellite, solp_file)
-        df = pd.merge(df, df_, how="left", on="date_time").sort_values("date_time")
+    # Jason satellite; read "panels" file
+    df_array = None if solp_file is None else _read_single_file(satellite, solp_file)
 
     # fix time scale and return data frame
-    return _fix_time(satellite, df)
+    df_body = _fix_time(satellite, df_body)
+    if df_array is not None:
+        df_array = _fix_time(satellite, df_array)
 
-
-def _process_batch(satellite: str, Nsec, df):
-    # interpolate at regular intervals
-    df = _interpolate(satellite, df, Nsec)
-
-    # convert time format
-    mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
-    df["MJDay"] = mjd_days
-    df["SecOfDay"] = sec_of_day
-
-    return df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
+    return df_body, df_array
 
 
 def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.DataFrame:
@@ -245,15 +243,28 @@ def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.Dat
     ]
 
     # process each single file pair
-    dfs = []
+    dfs_body = []
+    dfs_array = []
     for q in fileps:
-        dfs.append(_process_single_file(satellite, *q))
+        body, array = _process_single_file(satellite, *q)
+        dfs_body.append(body)
+        dfs_array.append(array)
 
     # interpolate merged dataframes
-    df = _process_batch(satellite, Nsec, pd.concat(dfs))
+    df_body, times = _interpolate(satellite, pd.concat(dfs_body), Nsec)
+    df_array, _ = _interpolate(satellite, pd.concat(dfs_array), Nsec, times)
+
+    # merge
+    df = pd.merge(df_body, df_array, left_index=True, right_index=True)
+
+    # convert time format
+    mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
+    df["MJDay"] = mjd_days
+    df["SecOfDay"] = sec_of_day
+    df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
     # remove raw files
-    [remove(f) for f in qfns if exists(f)]
+    # [remove(f) for f in qfns if exists(f)]
 
     # return a single pandas DataFrame
     return df
@@ -272,7 +283,13 @@ def _process_sentinel_files(
         dfs.append(_process_single_file(satellite, qfile))
 
     # interpolate merged dataframes
-    df = _process_batch(satellite, Nsec, pd.concat(dfs))
+    df = _interpolate(satellite, Nsec, pd.concat(dfs))
+
+    # convert time format
+    mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
+    df["MJDay"] = mjd_days
+    df["SecOfDay"] = sec_of_day
+    df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
     # delete DBL files
     [remove(f) for f in qfns if exists(f)]
