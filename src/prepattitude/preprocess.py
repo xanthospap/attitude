@@ -264,7 +264,7 @@ def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.Dat
     df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
 
     # remove raw files
-    # [remove(f) for f in qfns if exists(f)]
+    [remove(f) for f in qfns if exists(f)]
 
     # return a single pandas DataFrame
     return df
@@ -280,10 +280,11 @@ def _process_sentinel_files(
     # process each file
     dfs = []
     for qfile in qfns:
-        dfs.append(_process_single_file(satellite, qfile))
+        body, _ = _process_single_file(satellite, qfile)
+        dfs.append(body)
 
     # interpolate merged dataframes
-    df = _interpolate(satellite, Nsec, pd.concat(dfs))
+    df, _ = _interpolate(satellite, pd.concat(dfs), Nsec)
 
     # convert time format
     mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
