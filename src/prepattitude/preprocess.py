@@ -9,6 +9,7 @@
 import logging
 import pathlib
 import tarfile
+import datetime
 from os import remove
 from os.path import join, dirname, exists
 
@@ -19,6 +20,7 @@ from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
 from prepattitude.configuration import SATELLITE_INFO, GAP_THRESHOLD
+from prepattitude.swot import swo_qsol_to_csv
 
 
 # LOGGING_LEVEL = logging.INFO
@@ -78,7 +80,7 @@ def _read_single_file(satellite: str, qfile: pathlib.Path) -> pd.DataFrame:
                 ),
             }
             df = pd.read_csv(qfile, **kwargs, **sv_args)
-        case "ja2" | "ja3":
+        case "ja2" | "ja3" | "swo":
             try:
                 sv_args = {
                     "usecols": [0, 1, 3, 6, 9, 12],
@@ -117,7 +119,7 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     logger.info("Fixing time scale.")
     # change time scale to TT
     match satellite:
-        case "ja1" | "ja2" | "ja3":
+        case "ja1" | "ja2" | "ja3" | "swo":
             # Jason quaternions are given at UTC times
             tt = atime.Time(df["date_time"].to_numpy(), scale="utc").tt
         case "s3a" | "s3b" | "s6a":
@@ -202,8 +204,6 @@ def _interpolate(
         # Select only the rows corresponding to your target times
         df = df_interp.loc[new_datetimes]
         df.index = times
-        print("resulting df=")
-        print(df)
 
     # print(df)
     # fix index (MJD to datetime64)
@@ -217,6 +217,9 @@ def _process_single_file(
     satellite: str, qfile: pathlib.Path, solp_file: pathlib.Path = None
 ) -> pd.DataFrame:
     """Process a single quaternion file, or a pair (body -- panels) in case of Jason satellite."""
+    if satellite == "swo" and ("qsolp" in qfile):
+        qfile = swo_qsol_to_csv(qfile)
+
     # read "body" q-file
     df_body = _read_single_file(satellite, qfile)
 
@@ -249,6 +252,40 @@ def _process_jason_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.Dat
         body, array = _process_single_file(satellite, *q)
         dfs_body.append(body)
         dfs_array.append(array)
+
+    # interpolate merged dataframes
+    df_body, times = _interpolate(satellite, pd.concat(dfs_body), Nsec)
+    df_array, _ = _interpolate(satellite, pd.concat(dfs_array), Nsec, times)
+
+    # merge
+    df = pd.merge(df_body, df_array, left_index=True, right_index=True)
+
+    # convert time format
+    mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")
+    df["MJDay"] = mjd_days
+    df["SecOfDay"] = sec_of_day
+    df = df.reset_index(drop=True).set_index(["MJDay", "SecOfDay"])
+
+    # remove raw files
+    # [remove(f) for f in qfns if exists(f)]
+
+    # return a single pandas DataFrame
+    return df
+
+
+def _process_swo_files(satellite: str, Nsec: float, qfns: list[str]) -> pd.DataFrame:
+    """Walk through the given file list, read, process and concatenate quaternion files."""
+    DATA_TYPES = SATELLITE_INFO[satellite]["data_types"]
+
+    # process each single file pair
+    dfs_body = []
+    dfs_array = []
+    for q in qfns:
+        body, array = _process_single_file(satellite, q)
+        if "qbody" in q:
+            dfs_body.append(body)
+        else:
+            dfs_array.append(body)
 
     # interpolate merged dataframes
     df_body, times = _interpolate(satellite, pd.concat(dfs_body), Nsec)
@@ -311,9 +348,11 @@ def preprocess(satellite: str, Nsec: float, qfns: list[str]) -> None:
             df = _process_jason_files(satellite, Nsec, qfns)
         case "s3a" | "s3b" | "s6a":
             df = _process_sentinel_files(satellite, Nsec, qfns)
+        case "swo":
+            df = _process_swo_files(satellite, Nsec, qfns)
 
     # output
     save_dir = dirname(qfns[0])
     csv_file = f"{save_dir}/qua_{satellite}.csv"
     logger.info(f"Quaternions file is saved to {csv_file}.")
-    df.to_csv(csv_file, sep=" ", float_format="%.12e", header=False)
+    df.dropna().to_csv(csv_file, sep=" ", float_format="%.12e", header=False)

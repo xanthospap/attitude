@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 
+## !!!!!!!!!!!!!!!!!!!!!!!!!!
+## This is now obsolete !!!!!
+## !!!!!!!!!!!!!!!!!!!!!!!!!!
+
 """date_utils.py
 
 Various date handling utilities.

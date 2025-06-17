@@ -10,11 +10,13 @@ for the "extended" week (9 days; Saturday to next Sunday).
 
 import argparse
 import logging
+import datetime
 
 from prepattitude.configuration import SATELLITE_INFO
 from prepattitude.date_calculator import DateCalculator
 from prepattitude.basedownl.cddis_downloader import CDDISDownloader
 from prepattitude.basedownl.copernicus_downloader import CopernicusDownloader
+from prepattitude.basedownl.ign_downloader import IgnFtpDownloader
 
 
 # LOGGING_LEVEL = logging.INFO
@@ -28,12 +30,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def download_data(satellite: str, the_date: str, save_dir: str) -> list[str]:
+def extended_interval(t, add_days_before=2, add_days_after=3):
+    t = (
+        datetime.datetime.combine(t, datetime.datetime.min.time())
+        if isinstance(t, datetime.date)
+        else t
+    )
+    return t - datetime.timedelta(days=add_days_before), t + datetime.timedelta(
+        days=add_days_after
+    )
+
+
+def download_data(satellite: str, the_date: str, save_dir: str, **kwargs) -> list[str]:
     """Construct a Downloader object and download data.
     Returns the list of daownloaded files (i.e. local files, including path).
     """
-    dranges = DateCalculator(the_date).date_ranges
-    logger.debug(dranges)
+    tstart, tstop = extended_interval(the_date)
 
     logger.info(
         f"""\
@@ -43,16 +55,10 @@ Downloading quaternions for the "extended" week around {the_date} for satellite 
 
     match satellite:
         case "ja1" | "ja2" | "ja3":
-            downloader = CDDISDownloader(
-                satellite, SATELLITE_INFO[satellite]["base_url"]
-            )
+            downloader = CDDISDownloader(satellite, **kwargs)
         case "s3a" | "s3b" | "s6a":
-            downloader = CopernicusDownloader(
-                satellite, SATELLITE_INFO[satellite]["base_url"]
-            )
+            downloader = CopernicusDownloader(satellite, **kwargs)
+        case "swo":
+            downloader = IgnFtpDownloader(satellite, **kwargs)
 
-    localq = []
-    for data_type in SATELLITE_INFO[satellite]["data_types"]:
-        localq += downloader.download_data(dranges, save_dir, data_type)
-
-    return localq
+    return downloader.download_data(tstart, tstop, save_dir)

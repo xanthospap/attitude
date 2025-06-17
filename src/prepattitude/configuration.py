@@ -46,6 +46,12 @@ SATELLITE_INFO = {
         "base_url": "Sentinel-6/AUX/AUX_PROQUA",
         "data_types": ["qbody"],
     },
+    "swo": {
+        "name": "Swot",
+        "launch_year": 2023,
+        "base_url": "pub/doris/ancillary/quaternions/swo/",  # (followed by YYYY)
+        "data_types": ["qbody", "qsolp"],
+    },
 }
 
 

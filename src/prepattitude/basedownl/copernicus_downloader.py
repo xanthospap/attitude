@@ -13,8 +13,8 @@ import logging
 import pathlib
 import boto3
 from prepattitude.configuration import SATELLITE_INFO
-
 from os.path import expanduser, join, isfile
+
 user_home = expanduser("~")
 
 LOGGING_LEVEL = logging.INFO
@@ -35,14 +35,14 @@ logging.basicConfig(
 class CopernicusDownloader:
     """Downloader object."""
 
-    def __init__(self, satellite: str, base_url: str) -> None:
+    def __init__(self, satellite: str, **kwargs) -> None:
         self._satellite = satellite
-        self._base_url = base_url
+        self._base_url = SATELLITE_INFO[satellite]["base_url"]  # base_url
         self._logger = logging.getLogger(self.__class__.__name__)
 
         # parse configuration
         _cfg = {}
-        with open(join(user_home, ".s3cfg"), 'r') as fh:
+        with open(join(user_home, ".s3cfg"), "r") as fh:
             for line in fh:
                 try:
                     key, value = line.split("=")
@@ -62,16 +62,15 @@ class CopernicusDownloader:
         )  # generated secrets
         self._bucket = _s3.Bucket("eodata")
 
-    def _generate_products(self, date_ranges: list[list[datetime.date]]) -> list[str]:
+    def _generate_products(self, start_t, end_t) -> list[str]:
         """Generate the product URL for each sublist of the given date ranges."""
-        products = []
-        for dr in date_ranges:
-            products += [
-                f"{self._base_url}/{d.year:4d}/{d.month:02d}/{d.day:02d}/" for d in dr
+        return [
+            f"{self._base_url}/{d.year:4d}/{d.month:02d}/{d.day:02d}/"
+            for d in [
+                start_t + datetime.timedelta(days=i)
+                for i in range((start_t - end_t).days)
             ]
-
-        self._logger.debug(products)
-        return products
+        ]
 
     def _make_save_dir(self, save_dir: str) -> None:
         """Make the directory to save the files."""
@@ -106,20 +105,15 @@ Please, select a different directory to save the files.
                     self._bucket.download_file(file.key, qfile)
                 return qfile
 
-    def download_data(
-        self,
-        date_ranges: list[list[datetime.date]],
-        save_dir: str,
-        data_type: str = None,
-    ) -> list[str]:
+    def download_data(self, start_t, end_t, save_dir: str) -> list[str]:
         """Download data for the given date and save it to the specified directory.
-            Note that the data_type input parameter is ignored for Sentinel series.
+        Note that the data_type input parameter is ignored for Sentinel series.
         """
         self._make_save_dir(save_dir)
 
         downloaded_files = []
 
-        for product in self._generate_products(date_ranges):
+        for product in self._generate_products(start_t, end_t):
             try:
                 downloaded_files.append(self._download_product(product, save_dir))
                 self._logger.info(

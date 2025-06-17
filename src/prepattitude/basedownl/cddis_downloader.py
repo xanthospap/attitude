@@ -13,8 +13,9 @@ import logging
 import multiprocessing
 import pathlib
 import requests
+import re
 from opnieuw import retry
-from os.path import exists
+from os.path import exists, basename
 
 from prepattitude.configuration import SATELLITE_INFO
 
@@ -28,12 +29,31 @@ logging.basicConfig(
 )
 
 
+def ja_product_range(satellite, fn):
+    fn = basename(fn)
+    if fn.startswith(f"{satellite}qsolp"):
+        match = re.match(r"ja?qsolp(\d{14})_(\d{14})\.\d{3}", fn)
+        if match:
+            start_str, end_str = match.groups()
+            start_dt = datetime.strptime(start_str, "%Y%m%d%H%M%S")
+            end_dt = datetime.strptime(end_str, "%Y%m%d%H%M%S")
+            return start_dt, end_dt
+    elif fn.startswith(f"{satellite}qbody"):
+        match = re.match(r"ja?qbody(\d{14})_(\d{14})\.\d{3}", fn)
+        if match:
+            start_str, end_str = match.groups()
+            start_dt = datetime.strptime(start_str, "%Y%m%d%H%M%S")
+            end_dt = datetime.strptime(end_str, "%Y%m%d%H%M%S")
+            return start_dt, end_dt
+    return None
+
+
 class CDDISDownloader:
     """Downloader object."""
 
-    def __init__(self, satellite: str, base_url: str) -> None:
+    def __init__(self, satellite: str, **kwargs) -> None:
         self._satellite = satellite
-        self._base_url = base_url
+        self._base_url = SATELLITE_INFO[satellite]["base_url"]
         self._logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
@@ -53,31 +73,22 @@ class CDDISDownloader:
 
         return response.text
 
-    def _generate_urls(
-        self, date_ranges: list[list[datetime.date]], data_type: str
-    ) -> list[str]:
+    def _generate_urls(self, start_t, end_t) -> list[str]:
         """Generate the URL of the given data type, for each sublist of the given date ranges."""
+        dates = [
+            start_t + datetime.timedelta(days=i) for i in range((end_t - start_t).days)
+        ]
         urls = []
-        for dr in date_ranges:
-            # construct the directory URL and request for the directory listing
-            url = f"{self._base_url}/{self._satellite}/{str(dr[0].year)}"
-            listing = self._get_directory_listing(url).split("\n")[:-1]
-
-            # find the matching files in the directory listing
-            file_prefixes = [
-                f"{self._satellite}{data_type}{d.strftime('%Y%m%d')}" for d in dr
-            ]
-            self._logger.debug(file_prefixes)
-
-            matches = [
-                f for f in listing if any(f.startswith(p) for p in file_prefixes)
-            ]
-            self._logger.debug(matches)
-
-            # construct urls to download
-            for m in matches:
-                urls.append(f"{url}/{m.split()[0]}")
-
+        crp = -1
+        for t in dates:
+            url = f"{self._base_url}/{self._satellite}/{t.year}"
+            if t.year != crp:
+                listing = self._get_directory_listing(url).split("\n")[:-1]
+                crp = t.year
+            for fn in listing:
+                t0, t1 = ja_product_range(self._satellite, fn)
+                if t0 < end_t and start_t < t1:
+                    urls.append(url)
         self._logger.debug(urls)
         return urls
 
@@ -147,19 +158,14 @@ Please, select a different directory to save the files.
         download_process.join()
         write_process.join()
 
-    def download_data(
-        self,
-        date_ranges: list[list[datetime.date]],
-        save_dir: str,
-        data_type: str,
-    ) -> list[str]:
+    def download_data(self, start_t, end_t, save_dir: str) -> list[str]:
         """Download data for the given date and save it to the specified directory.
         Returns the list of files downloaded (path + filename).
         """
         self._make_save_dir(save_dir)
         downloaded_files = []
 
-        for url in self._generate_urls(date_ranges, data_type):
+        for url in self._generate_urls(start_t, end_t):
             # infer local filename
             qfile = pathlib.Path(save_dir, url.split("/")[-1])
             try:

@@ -74,15 +74,27 @@ parser.add_argument(
     metavar="SATELLITE",
     required=True,
     dest="satellite",
-    choices=["ja1", "ja2", "ja3", "s3a", "s3b", "s6a"],
+    choices=["ja1", "ja2", "ja3", "s3a", "s3b", "s6a", "swo"],
     help="Sellect satellite.",
+)
+
+parser.add_argument(
+    "-p",
+    "--password",
+    metavar="PASSWORD",
+    required=False,
+    default="none",
+    dest="passw",
+    help="Depending on the remote service, we may need a password for dwoanloading products.",
 )
 
 
 def main():
-    args = args = parser.parse_args()
+    args = parser.parse_args()
     preprocess(
         args.satellite,
         args.nsec,
-        download_data(args.satellite, args.epoch.date(), args.save_dir),
+        download_data(
+            args.satellite, args.epoch.date(), args.save_dir, **{"password": args.passw}
+        ),
     )
