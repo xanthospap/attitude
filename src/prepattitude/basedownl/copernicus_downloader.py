@@ -68,7 +68,7 @@ class CopernicusDownloader:
             f"{self._base_url}/{d.year:4d}/{d.month:02d}/{d.day:02d}/"
             for d in [
                 start_t + datetime.timedelta(days=i)
-                for i in range((start_t - end_t).days)
+                for i in range((end_t - start_t).days)
             ]
         ]
 
@@ -114,6 +114,7 @@ Please, select a different directory to save the files.
         downloaded_files = []
 
         for product in self._generate_products(start_t, end_t):
+            print(f"product: {product}")
             try:
                 downloaded_files.append(self._download_product(product, save_dir))
                 self._logger.info(

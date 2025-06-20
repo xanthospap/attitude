@@ -128,7 +128,6 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
                 (df["date_time"] + np.timedelta64(19, "s")).to_numpy(), scale="tai"
             ).tt
     df["date_time"] = tt.to_value(format="datetime64")
-    logger.debug(df)
     # set date_time as index (replaced)
     return df.set_index("date_time")
 
@@ -189,8 +188,6 @@ def _interpolate(
         # Case B: Interpolate angles:
         # ----------------------------------------------------------------------
         logger.info("Interpolating solar panel angles.")
-        print("original df=")
-        print(df)
         # Convert those MJD times back to datetime for reindexing
         new_datetimes = atime.Time(times, format="mjd", scale="tt").to_datetime()
         # Reindex and interpolate
@@ -317,10 +314,10 @@ def _process_sentinel_files(
     # process each file
     dfs = []
     for qfile in qfns:
-        dfs.append(_process_single_file(satellite, qfile))
+        dfs.append(_process_single_file(satellite, qfile)[0])
 
     # interpolate merged dataframes
-    df = _interpolate(satellite, Nsec, pd.concat(dfs))
+    df, _ = _interpolate(satellite, pd.concat(dfs), Nsec)
 
     # convert time format
     mjd_days, sec_of_day = _time2mjd(df.index.values, scale="tt")

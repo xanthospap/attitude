@@ -15,9 +15,10 @@ import pathlib
 import requests
 import re
 from opnieuw import retry
-from os.path import exists, basename
+from os.path import exists, basename, join
 
 from prepattitude.configuration import SATELLITE_INFO
+from prepattitude.jason import ja_product_range
 
 LOGGING_LEVEL = logging.INFO
 # LOGGING_LEVEL = logging.DEBUG  # try logging.DEBUG for more info
@@ -27,25 +28,6 @@ logging.basicConfig(
     style="{",
     format="{levelname}: {name} ({funcName}) [{lineno}]:  {message}",
 )
-
-
-def ja_product_range(satellite, fn):
-    fn = basename(fn)
-    if fn.startswith(f"{satellite}qsolp"):
-        match = re.match(r"ja?qsolp(\d{14})_(\d{14})\.\d{3}", fn)
-        if match:
-            start_str, end_str = match.groups()
-            start_dt = datetime.strptime(start_str, "%Y%m%d%H%M%S")
-            end_dt = datetime.strptime(end_str, "%Y%m%d%H%M%S")
-            return start_dt, end_dt
-    elif fn.startswith(f"{satellite}qbody"):
-        match = re.match(r"ja?qbody(\d{14})_(\d{14})\.\d{3}", fn)
-        if match:
-            start_str, end_str = match.groups()
-            start_dt = datetime.strptime(start_str, "%Y%m%d%H%M%S")
-            end_dt = datetime.strptime(end_str, "%Y%m%d%H%M%S")
-            return start_dt, end_dt
-    return None
 
 
 class CDDISDownloader:
@@ -83,12 +65,14 @@ class CDDISDownloader:
         for t in dates:
             url = f"{self._base_url}/{self._satellite}/{t.year}"
             if t.year != crp:
-                listing = self._get_directory_listing(url).split("\n")[:-1]
+                #listing = [ x.split()[0] for x in self._get_directory_listing(url).split('\n') if not x.startswith('#') ]
+                #print(listing)
+                listing = [ line.split()[0] for line in self._get_directory_listing(url).strip().splitlines() if line and not line.strip().startswith("#") ]
                 crp = t.year
             for fn in listing:
-                t0, t1 = ja_product_range(self._satellite, fn)
+                t0, t1 = ja_product_range(self._satellite, fn, self._logger)
                 if t0 < end_t and start_t < t1:
-                    urls.append(url)
+                    urls.append(join(url,fn))
         self._logger.debug(urls)
         return urls
 
@@ -166,6 +150,7 @@ Please, select a different directory to save the files.
         downloaded_files = []
 
         for url in self._generate_urls(start_t, end_t):
+            print(url)
             # infer local filename
             qfile = pathlib.Path(save_dir, url.split("/")[-1])
             try:
