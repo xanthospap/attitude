@@ -35,6 +35,12 @@ For some satellites quaternion files are archived and downloaded from [Copernicu
 (e.g. Sentinel missions). To download these you will need a [.s3cfg](https://documentation.dataspace.copernicus.eu/APIs/S3.html) 
 file, placed at the user's home directory.
 
+## Data & Products not Listed Here
+
+### Space-Weather Data
+
+Space-weather data can be downloaded from [CelesTrak](https://celestrak.org/SpaceData/) in `csv` format (do not try 
+downloading the older `legacy` format, use the current standard).
 
 ## Attitude Download & Pre-Processing
 
