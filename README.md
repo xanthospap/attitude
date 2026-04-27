@@ -1,32 +1,29 @@
-# attitude: Preprocess attitude files
-
-
-<!-- ## Introduction -->
-This project prepares satellite attitude files to be used in Precise Orbit Determination (POD). 
-Currently, it uses quaternions and produces attitude files that span a full (GPS)
-week<sup>[1](#myfootnote1)</sup> that contains a given date.
-
+# Product Download & Preprocessing Facilities for DORIS
 
 ## Installation
-The easiest way to install the package is using [uv](https://github.com/astral-sh/uv). 
-After downloading, you simply have to run 
-`uv sync` 
-and you're good to go.
 
-Alternatively, you can use [pip](https://pypi.org/project/pip/) to install the project, via 
-`pip install .` (or `pip install -e .` for an editable version).
+Affter cloning, you can use `pip` to install the package, e.g.
+`pip install .` or `pip install -e .` for an editable version. Pick the latter 
+if you need to edit the source code.
 
+## Products, Data and Executables
+
+| Product Type   | Program                          | Notes        |
+| ------------   | -------------------------------  | -------------|
+| attitude files | `prepattitude`                   | Download and pre-process satellite-specific (measured) attitude files |
+| RINEX (data)   | `rnxdwn`                         | Download DORIS RINEX files |
+| orbits         | `sp3dwn`                         | Download (final) satellite-specific `sp3c` file(s) |
+| VMF            | `vmfdwn`                         | Download [VMF](https://vmf.geo.tuwien.ac.at/) product files. For now, we only handle gridded `V3GR` VMF3-specific files |
+| satellite mass | `satmass`                        | Download satellite-specific mass history files |
+
+Information on the data/products can be found in [products](docs/products.md). The `Program` 
+column above lists the programs available system-wide once you install the project.
 
 ## Usage
-~~After editing the configuration file [`configuration.py`](src/configuration.py), the basic usage is
-straightfowrward: \
-`python attitude.py <date>` \
-eg. `python attitude.py 2021-12-17` will produce the attitude file for the (extended) week that
-contains this date (2021-12-10 to 2021-12-19).~~
-After installation, you'll have an executable named `prepattitude` in your PATH. The program contains 
-a help message, triggered with `-h` or `--help`. Basic usage includes adding a satellite name/id and 
-the date of interest, e.g. `prepattitude -e 2021-12-17 -s s3b`. This command will produce the attitude 
-file for the (extended) week that contains this date (2021-12-10 to 2021-12-19).
+
+For usage type any program name followed by `-h` or `--help`. 
+
+## Credentials
 
 ### Note for CDDIS Web Archive
 For some satellites quaternion files are archived and downloaded from [CDDIS](https://cddis.nasa.gov/) 
@@ -38,7 +35,9 @@ For some satellites quaternion files are archived and downloaded from [Copernicu
 (e.g. Sentinel missions). To download these you will need a [.s3cfg](https://documentation.dataspace.copernicus.eu/APIs/S3.html) 
 file, placed at the user's home directory.
 
-## Output
+
+## Attitude Download & Pre-Processing
+
 The output file is a space delimited tabular file.  The columns depend on the satellite "family". Note that 
 the output file contains date/time information in the **TT timescale** (regardless of satellite or input file(s)).
 
@@ -49,7 +48,7 @@ the output file contains date/time information in the **TT timescale** (regardle
   - `LP` and `RP` are the rotation angles of the left and right panel, respectively (Jason
     satellites.)
 
-## Available Satellites:
+### Available Satellites:
 
   | Satellite Id | Name        | Launch Yr | Archive                                                                 |
   | ------------ | ----------- | --------- | ----------------------------------------------------------------------- |
@@ -65,21 +64,5 @@ the output file contains date/time information in the **TT timescale** (regardle
 #### Sentinel satellites
 `MJDay SoD Q0 Q1 Q2 Q3`
 
-### Caveat (Fixed)
-~~If the "working" directory is not empty, the software will concatenate ALL available quaternion
-files, even the ones not downloaded in the current 'run'.~~
-
-
-<!-- ## Contributing
-Provide guidelines for contributing to your project. -->
-
-
 ## License
 Licensed under the MIT License.  See [LICENSE](LICENSE).
-
-
-
----
-<a name="myfootnote1">1</a>  Actually, the GPS week is extended by one day both before and after,
-ie. it contains 9 days (Saturday to Monday), in order to be useful in computing arcs around Sundays
-and Saturdays.
