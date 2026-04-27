@@ -1,29 +1,56 @@
 [project]
-name = "prepattitude"
+name = "attitude"
 version = "0.1.0"
-description = "Satellite attitude computations"
+description = "Download and preprocess satellite attitude and auxiliary DORIS/POD files"
 readme = "README.md"
-authors = [
-    { name = "vangelis-z", email = "vangelis.zacharis@disroot.org" }
-]
-license = {text = "MIT"}
 requires-python = ">=3.12"
+license = "MIT"
+
+authors = [
+    { name = "vangelis-z", email = "vangelis.zacharis@disroot.org" },
+]
+
 dependencies = [
     "astropy>=7.0.1",
     "boto3>=1.37.8",
+    "matplotlib>=3.9",
     "numpy>=2.2.3",
     "opnieuw>=3.0.0",
     "pandas>=2.2.3",
     "requests>=2.32.3",
+    "scipy>=1.14",
 ]
 
 [project.scripts]
-prepattitude = "prepattitude.cli:main"
-fitsatgeometry = "cnesfr.cli:main"
+prepattitude = "apps.attitude:main"
+satmass = "apps.satmass:main"
+rnxdwn = "apps.rinex:main"
+sp3dwn = "apps.orbits:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/apps",
+    "src/downloaders",
+    "src/parsers",
+    "src/preprocessors",
+    "src/products",
+    "src/sources",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "tests",
+    "docs",
+    "README.md",
+    "ChangeLog.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 
 [dependency-groups]
 dev = [
@@ -32,3 +59,21 @@ dev = [
     "pytest>=8.3.5",
     "ruff>=0.9.10",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
