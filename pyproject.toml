@@ -26,6 +26,7 @@ prepattitude = "apps.attitude:main"
 satmass = "apps.satmass:main"
 rnxdwn = "apps.rinex:main"
 sp3dwn = "apps.orbits:main"
+vmfdwn = "apps.vmf:main"
 
 [build-system]
 requires = ["hatchling"]
