@@ -42,6 +42,11 @@ file, placed at the user's home directory.
 Space-weather data can be downloaded from [CelesTrak](https://celestrak.org/SpaceData/) in `csv` format (do not try 
 downloading the older `legacy` format, use the current standard).
 
+### Earth Orientation Parameters
+
+These data files can be downloaded from [IERS](https://hpiers.obspm.fr/iers/eop/), using either the `C04/14` or the `C04/20` series. A quick link to the latest file is 
+[https://hpiers.obspm.fr/iers/eop/eopc04_20_v3/eopc04.1962-now](https://hpiers.obspm.fr/iers/eop/eopc04_20_v3/eopc04.1962-now)
+
 ## Attitude Download & Pre-Processing
 
 The output file is a space delimited tabular file.  The columns depend on the satellite "family". Note that 
