@@ -15,6 +15,7 @@ if you need to edit the source code.
 | orbits         | `sp3dwn`                         | Download (final) satellite-specific `sp3c` file(s) |
 | VMF            | `vmfdwn`                         | Download [VMF](https://vmf.geo.tuwien.ac.at/) product files. For now, we only handle gridded `V3GR` VMF3-specific files |
 | satellite mass | `satmass`                        | Download satellite-specific mass history files |
+| all            | `prepyda`                        | Download all products/data abovev, based on a a yaml file |
 
 Information on the data/products can be found in [products](docs/products.md). The `Program` 
 column above lists the programs available system-wide once you install the project.
