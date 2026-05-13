@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
@@ -38,6 +39,18 @@ LOGGER = logging.getLogger("prep_products")
 
 DEFAULT_PRODUCTS = ("rinex", "vmf3", "satmass", "attitude", "sp3")
 SATELLITE_PRODUCTS = {"rinex", "satmass", "attitude", "sp3"}
+
+
+@dataclass(frozen=True)
+class SatelliteConfig:
+    """Per-satellite settings parsed from the YAML satellite-attitude list."""
+
+    satellite: str
+    data_file: Path | None = None
+    cnes_sat_file: Path | None = None
+    data_dir: Path | None = None
+    mass_data_dir: Path | None = None
+    attitude_every_sec: float | None = None
 
 
 def parse_datetime(value: Any) -> dt.datetime:
@@ -121,19 +134,104 @@ def get_date_range(config: dict[str, Any], begin: str | None, end: str | None) -
     return start, stop
 
 
-def get_satellites(config: dict[str, Any], cli_satellites: list[str] | None) -> list[str]:
+def _satellite_attitude_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return satellite-attitude entries as a list of mappings.
+
+    Supports both the new format:
+
+        satellite-attitude:
+          - satellite: ja3
+            data_file: data/qua_ja3.csv
+          - satellite: s6a
+            data_file: data/qua_s6a.csv
+
+    and the old single-satellite mapping format.
+    """
+
+    raw = config.get("satellite-attitude")
+    if raw is None:
+        return []
+
+    if isinstance(raw, list):
+        entries: list[dict[str, Any]] = []
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise ValueError(f"satellite-attitude[{i}] must be a mapping")
+            entries.append(item)
+        return entries
+
+    if isinstance(raw, dict):
+        # Old format: satellite-attitude: {satellite: ja3, ...}
+        if raw.get("satellite"):
+            return [raw]
+
+        # Transitional format: satellite-attitude: {satellites: [ja3, s6a], ...}
+        entries = []
+        for sat in ensure_list(raw.get("satellites")):
+            entry = {key: value for key, value in raw.items() if key != "satellites"}
+            entry["satellite"] = sat
+            entries.append(entry)
+        return entries
+
+    raise ValueError("satellite-attitude must be either a mapping or a sequence of mappings")
+
+
+def _unique_satellites(values: Iterable[Any]) -> list[str]:
+    satellites = [str(sat).strip().lower() for sat in values if sat and str(sat).strip()]
+    return list(dict.fromkeys(satellites))
+
+
+def get_satellite_configs(
+    config: dict[str, Any],
+    cli_satellites: list[str] | None,
+    root: Path,
+) -> list[SatelliteConfig]:
+    """Read per-satellite settings from CLI/YAML.
+
+    CLI satellites choose the set/order of satellites. If a CLI satellite also
+    appears in YAML, its per-satellite files are still used.
+    """
+
+    entries = _satellite_attitude_entries(config)
+    by_sat: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        sat = entry.get("satellite")
+        if not sat:
+            raise ValueError("every satellite-attitude entry must contain a satellite field")
+        by_sat[str(sat).strip().lower()] = entry
+
     if cli_satellites:
-        satellites = cli_satellites
+        satellites = _unique_satellites(cli_satellites)
     else:
-        sat_cfg = config.get("satellite-attitude") or {}
         satellites = (
-            ensure_list(config.get("satellites"))
-            or ensure_list(sat_cfg.get("satellites"))
-            or ensure_list(sat_cfg.get("satellite"))
+            _unique_satellites(config.get("satellites") or [])
+            or _unique_satellites(by_sat.keys())
         )
 
-    satellites = [sat.strip().lower() for sat in satellites if sat and sat.strip()]
-    return list(dict.fromkeys(satellites))
+    configs: list[SatelliteConfig] = []
+    for sat in satellites:
+        entry = by_sat.get(sat, {})
+        nsec = entry.get("every_sec", entry.get("nsec"))
+        configs.append(
+            SatelliteConfig(
+                satellite=sat,
+                data_file=resolve_path(entry.get("data_file"), root),
+                cnes_sat_file=resolve_path(entry.get("cnes_sat_file"), root),
+                data_dir=resolve_path(entry.get("data_dir"), root),
+                mass_data_dir=resolve_path(entry.get("mass_data_dir"), root),
+                attitude_every_sec=None if nsec in (None, "") else float(nsec),
+            )
+        )
+
+    return configs
+
+
+def get_satellites(config: dict[str, Any], cli_satellites: list[str] | None) -> list[str]:
+    # Backward-compatible wrapper for callers that only need satellite names.
+    entries = _satellite_attitude_entries(config)
+    if cli_satellites:
+        return _unique_satellites(cli_satellites)
+    return _unique_satellites(config.get("satellites") or [entry["satellite"] for entry in entries if entry.get("satellite")])
 
 
 def get_products(raw_products: list[str]) -> list[str]:
@@ -372,7 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("config", type=Path, help="Processing YAML file, e.g. s6a_test.yaml")
     parser.add_argument("--begin", help="Override YAML rinex.from date/datetime")
     parser.add_argument("--end", help="Override YAML rinex.to date/datetime")
-    parser.add_argument("-s", "--satellite", action="append", help="Satellite ID. Repeat for multiple satellites. Defaults to YAML satellite-attitude.satellite.")
+    parser.add_argument("-s", "--satellite", action="append", help="Satellite ID. Repeat for multiple satellites. Defaults to YAML satellite-attitude[].satellite.")
     parser.add_argument(
         "--products",
         nargs="+",
@@ -396,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ftp-user", default="anonymous", help="FTP username for IGN SP3. Default: anonymous")
     parser.add_argument("--ftp-password", default="anonymous@", help="FTP password for IGN SP3. Default: anonymous@")
 
-    parser.add_argument("--attitude-every-sec", type=float, default=None, help="Attitude interpolation interval. Default: YAML satellite-attitude.every_sec/nsec or 5")
+    parser.add_argument("--attitude-every-sec", type=float, default=None, help="Attitude interpolation interval. Default: per-satellite YAML satellite-attitude[].every_sec/nsec or 5")
     parser.add_argument("--s3cfg", type=Path, default=None, help="Copernicus S3 config for attitude products")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     return parser
@@ -416,14 +514,16 @@ def main() -> int:
 
     products = get_products(args.products)
     start, stop = get_date_range(config, args.begin, args.end)
-    satellites = get_satellites(config, args.satellite)
+    sat_configs = get_satellite_configs(config, args.satellite, root)
+    satellites = [sat_cfg.satellite for sat_cfg in sat_configs]
 
     if any(product in SATELLITE_PRODUCTS for product in products) and not satellites:
-        raise SystemExit("ERROR: no satellite was provided. Use --satellite or YAML satellite-attitude.satellite.")
+        raise SystemExit("ERROR: no satellite was provided. Use --satellite or YAML satellite-attitude[].satellite.")
 
     rinex_cfg = config.get("rinex") or {}
     trop_cfg = config.get("troposphere") or {}
-    attitude_cfg = config.get("satellite-attitude") or {}
+    attitude_cfg_raw = config.get("satellite-attitude") or {}
+    attitude_defaults = attitude_cfg_raw if isinstance(attitude_cfg_raw, dict) else {}
     sp3_cfg = config.get("sp3") or config.get("orbits") or {}
 
     data_dir_override = resolve_path(args.data_dir, root) if args.data_dir else None
@@ -433,24 +533,24 @@ def main() -> int:
     vmf_dir = mkdir(data_dir_override or first_path(root, trop_cfg.get("data_dir"), default=default_data_dir))
     sp3_dir = mkdir(data_dir_override or first_path(root, sp3_cfg.get("data_dir"), default=default_data_dir))
 
-    configured_attitude_output = resolve_path(attitude_cfg.get("data_file"), root)
+    configured_attitude_outputs = [sat_cfg.data_file for sat_cfg in sat_configs if sat_cfg.data_file]
     attitude_dir = mkdir(
         data_dir_override
         or first_path(
             root,
-            attitude_cfg.get("data_dir"),
-            configured_attitude_output.parent if configured_attitude_output else None,
+            attitude_defaults.get("data_dir"),
+            configured_attitude_outputs[0].parent if len(configured_attitude_outputs) == 1 else None,
             default=default_data_dir,
         )
     )
 
-    configured_mass_file = resolve_path(attitude_cfg.get("cnes_sat_file"), root)
+    configured_mass_files = [sat_cfg.cnes_sat_file for sat_cfg in sat_configs if sat_cfg.cnes_sat_file]
     satmass_dir = mkdir(
         data_dir_override
         or first_path(
             root,
-            attitude_cfg.get("mass_data_dir"),
-            configured_mass_file.parent if configured_mass_file else None,
+            attitude_defaults.get("mass_data_dir"),
+            configured_mass_files[0].parent if len(configured_mass_files) == 1 else None,
             default=default_data_dir,
         )
     )
@@ -513,7 +613,9 @@ def main() -> int:
 
             run_step("VMF3", _vmf3)
 
-    for satellite in satellites:
+    for sat_cfg in sat_configs:
+        satellite = sat_cfg.satellite
+
         if "rinex" in products:
             def _rinex(sat: str = satellite) -> None:
                 files = download_rinex_product(
@@ -530,48 +632,56 @@ def main() -> int:
             run_step(f"RINEX {satellite}", _rinex)
 
         if "satmass" in products:
-            def _satmass(sat: str = satellite) -> None:
-                file = download_satmass_product(sat, satmass_dir, overwrite=args.overwrite)
-                append_result(results, f"satmass:{sat}", [file])
-                LOGGER.info("Satellite mass %s: %s", sat, file)
-                if configured_mass_file and len(satellites) == 1 and Path(file).resolve() != configured_mass_file.resolve():
+            def _satmass(cfg: SatelliteConfig = sat_cfg) -> None:
+                out_dir = mkdir(data_dir_override or cfg.mass_data_dir or (cfg.cnes_sat_file.parent if cfg.cnes_sat_file else satmass_dir))
+                file = download_satmass_product(cfg.satellite, out_dir, overwrite=args.overwrite)
+                append_result(results, f"satmass:{cfg.satellite}", [file])
+                LOGGER.info("Satellite mass %s: %s", cfg.satellite, file)
+                if cfg.cnes_sat_file and Path(file).resolve() != cfg.cnes_sat_file.resolve():
                     LOGGER.warning(
-                        "YAML cnes_sat_file is %s, but downloader returned %s. Update the YAML if needed.",
-                        configured_mass_file,
+                        "YAML cnes_sat_file for %s is %s, but downloader returned %s. Update the YAML if needed.",
+                        cfg.satellite,
+                        cfg.cnes_sat_file,
                         file,
                     )
 
             run_step(f"satmass {satellite}", _satmass)
 
         if "attitude" in products:
-            def _attitude(sat: str = satellite) -> None:
+            def _attitude(cfg: SatelliteConfig = sat_cfg) -> None:
+                out_dir = mkdir(data_dir_override or cfg.data_dir or (cfg.data_file.parent if cfg.data_file else attitude_dir))
                 raw_files = download_attitude_files(
-                    sat,
+                    cfg.satellite,
                     start,
                     stop,
-                    attitude_dir,
+                    out_dir,
                     overwrite=args.overwrite,
                     s3cfg=args.s3cfg,
                 )
                 raw_files = keep_overlapping_attitude_files(raw_files, start, stop)
 
-                if configured_attitude_output and len(satellites) == 1:
-                    attitude_output = configured_attitude_output
-                else:
-                    attitude_output = attitude_dir / f"qua_{sat}.csv"
+                attitude_output = cfg.data_file or (out_dir / f"qua_{cfg.satellite}.csv")
                 attitude_output.parent.mkdir(parents=True, exist_ok=True)
 
+                nsec = (
+                    args.attitude_every_sec
+                    or cfg.attitude_every_sec
+                    or attitude_defaults.get("every_sec")
+                    or attitude_defaults.get("nsec")
+                    or 5.0
+                )
+
                 prepared_file = preprocess_attitude_product(
-                    sat,
+                    cfg.satellite,
                     raw_files,
                     start,
                     stop,
-                    nsec=args.attitude_every_sec or attitude_cfg.get("every_sec") or attitude_cfg.get("nsec") or 5.0,
+                    nsec=float(nsec),
                     output_file=attitude_output,
                 )
-                append_result(results, f"attitude_raw:{sat}", raw_files)
-                append_result(results, f"attitude_prepared:{sat}", [prepared_file])
-                LOGGER.info("Attitude %s: %s", sat, prepared_file)
+                append_result(results, f"attitude_raw:{cfg.satellite}", raw_files)
+                append_result(results, f"attitude_prepared:{cfg.satellite}", [prepared_file])
+                LOGGER.info("Attitude %s: %s", cfg.satellite, prepared_file)
 
             run_step(f"attitude {satellite}", _attitude)
 
