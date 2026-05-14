@@ -12,11 +12,8 @@ scripts instead of shelling out to them:
   * SP3 orbits  -> sources.ign/download_orbits or sources.cddis.download_orbits
   * Sat mass    -> sources.ids.download_satmass, if requested or present in YAML
 
-Example:
-
-    python prep_products.py s6a_test.yaml --uncompress --overwrite
-
 Paths found in the YAML are resolved relative to the YAML file location.
+The JSON summary is written to downloads.json by default.
 """
 
 from __future__ import annotations
@@ -28,6 +25,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.error import URLError
+from urllib.request import urlretrieve
 
 try:
     import yaml
@@ -39,6 +38,12 @@ LOGGER = logging.getLogger("prep_products")
 
 DEFAULT_PRODUCTS = ("rinex", "vmf3", "satmass", "attitude", "sp3")
 SATELLITE_PRODUCTS = {"rinex", "satmass", "attitude", "sp3"}
+VMF_EXTRA_MARGIN = dt.timedelta(hours=6)
+ATTITUDE_EXTRA_MARGIN = dt.timedelta(minutes=30)
+VMF_OROGRAPHY_URLS = {
+    "5x5": "https://vmf.geo.tuwien.ac.at/station_coord_files/orography_ell_5x5",
+    "1x1": "https://vmf.geo.tuwien.ac.at/station_coord_files/orography_ell_1x1",
+}
 
 
 @dataclass(frozen=True)
@@ -203,10 +208,7 @@ def get_satellite_configs(
     if cli_satellites:
         satellites = _unique_satellites(cli_satellites)
     else:
-        satellites = (
-            _unique_satellites(config.get("satellites") or [])
-            or _unique_satellites(by_sat.keys())
-        )
+        satellites = _unique_satellites(config.get("satellites") or []) or _unique_satellites(by_sat.keys())
 
     configs: list[SatelliteConfig] = []
     for sat in satellites:
@@ -224,14 +226,6 @@ def get_satellite_configs(
         )
 
     return configs
-
-
-def get_satellites(config: dict[str, Any], cli_satellites: list[str] | None) -> list[str]:
-    # Backward-compatible wrapper for callers that only need satellite names.
-    entries = _satellite_attitude_entries(config)
-    if cli_satellites:
-        return _unique_satellites(cli_satellites)
-    return _unique_satellites(config.get("satellites") or [entry["satellite"] for entry in entries if entry.get("satellite")])
 
 
 def get_products(raw_products: list[str]) -> list[str]:
@@ -293,6 +287,27 @@ def download_vmf3_product(
     if not files:
         raise RuntimeError("no VMF3 grid files were downloaded")
     return [Path(file) for file in files]
+
+
+def download_vmf_orography_product(grid: str, output_dir: Path, *, overwrite: bool) -> Path:
+    """Download the VMF ellipsoidal orography companion file for the selected grid."""
+    try:
+        url = VMF_OROGRAPHY_URLS[grid]
+    except KeyError as exc:
+        raise ValueError(f"unsupported VMF orography grid {grid!r}; use one of {sorted(VMF_OROGRAPHY_URLS)}") from exc
+
+    target = output_dir / Path(url).name
+    if target.exists() and not overwrite:
+        LOGGER.info("VMF orography %s already exists; keeping it", target)
+        return target
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        urlretrieve(url, target)
+    except URLError as exc:
+        raise RuntimeError(f"failed downloading VMF orography file from {url}") from exc
+
+    return target
 
 
 def download_satmass_product(satellite: str, output_dir: Path, *, overwrite: bool) -> Path:
@@ -450,16 +465,38 @@ def planned_summary(
     satellites: list[str],
     start: dt.datetime,
     stop: dt.datetime,
+    vmf_start: dt.datetime,
+    vmf_stop: dt.datetime,
+    attitude_start: dt.datetime,
+    attitude_stop: dt.datetime,
     directories: dict[str, Path],
 ) -> dict[str, Any]:
     return {
         "config": str(config_path),
         "start": start.isoformat(sep=" "),
         "end": stop.isoformat(sep=" "),
+        "extended_ranges": {
+            "vmf3": {
+                "start": vmf_start.isoformat(sep=" "),
+                "end": vmf_stop.isoformat(sep=" "),
+                "margin_after_end_hours": VMF_EXTRA_MARGIN.total_seconds() / 3600.0,
+            },
+            "attitude": {
+                "start": attitude_start.isoformat(sep=" "),
+                "end": attitude_stop.isoformat(sep=" "),
+                "margin_before_start_minutes": ATTITUDE_EXTRA_MARGIN.total_seconds() / 60.0,
+                "margin_after_end_minutes": ATTITUDE_EXTRA_MARGIN.total_seconds() / 60.0,
+            },
+        },
         "satellites": satellites,
         "products": products,
         "directories": {key: str(value) for key, value in directories.items()},
     }
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -479,13 +516,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Products to prepare. Default: all.",
     )
     parser.add_argument("--data-dir", type=Path, help="Override all product output directories")
-    parser.add_argument("--overwrite", action="store_true", help="Redownload products even if they exist")
-    parser.add_argument("--uncompress", action="store_true", help="Uncompress RINEX and IGN SP3 .Z files")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without downloading")
-    parser.add_argument("--continue-on-error", action="store_true", help="Continue with later products/satellites after an error")
-    parser.add_argument("--manifest", type=Path, help="Optional JSON file where downloaded/prepared paths are written")
 
-    parser.add_argument("--vmf-type", default=None, help="VMF product type. Default: YAML troposphere.type or v3gr")
+    parser.add_argument("--overwrite", dest="overwrite", action="store_true", default=True, help="Redownload products even if they exist. This is the default.")
+    parser.add_argument("--no-overwrite", dest="overwrite", action="store_false", help="Keep existing files when possible")
+    parser.add_argument("--uncompress", dest="uncompress", action="store_true", default=True, help="Uncompress RINEX and IGN SP3 .Z files. This is the default.")
+    parser.add_argument("--no-uncompress", dest="uncompress", action="store_false", help="Do not uncompress RINEX and IGN SP3 .Z files")
+
+    parser.add_argument("--dry-run", action="store_true", help="Write what would be done to the manifest without downloading")
+    parser.add_argument("--continue-on-error", action="store_true", help="Continue with later products/satellites after an error")
+    parser.add_argument("--manifest", type=Path, default=Path("downloads.json"), help="JSON manifest path. Default: downloads.json")
+
+    parser.add_argument("--vmf-type", default=None, help="VMF grid product type. Default: YAML troposphere.type/product_type or v3gr")
     parser.add_argument("--vmf-grid", default=None, choices=["1x1", "5x5"], help="VMF grid resolution. Default: YAML troposphere.grid or 5x5")
 
     parser.add_argument("--sp3-source", choices=["ign", "cddis"], default=None, help="SP3 archive source. Default: YAML sp3.source/orbits.source or ign")
@@ -514,6 +555,11 @@ def main() -> int:
 
     products = get_products(args.products)
     start, stop = get_date_range(config, args.begin, args.end)
+    vmf_start = start
+    vmf_stop = stop + VMF_EXTRA_MARGIN
+    attitude_start = start - ATTITUDE_EXTRA_MARGIN
+    attitude_stop = stop + ATTITUDE_EXTRA_MARGIN
+
     sat_configs = get_satellite_configs(config, args.satellite, root)
     satellites = [sat_cfg.satellite for sat_cfg in sat_configs]
 
@@ -569,13 +615,12 @@ def main() -> int:
         satellites=satellites,
         start=start,
         stop=stop,
+        vmf_start=vmf_start,
+        vmf_stop=vmf_stop,
+        attitude_start=attitude_start,
+        attitude_stop=attitude_stop,
         directories=directories,
     )
-
-    LOGGER.info("Plan:\n%s", json.dumps(plan, indent=2))
-    if args.dry_run:
-        print(json.dumps({"dry_run": True, **plan}, indent=2))
-        return 0
 
     results: dict[str, list[str]] = {}
     errors: list[str] = []
@@ -591,6 +636,13 @@ def main() -> int:
             else:
                 raise
 
+    if args.dry_run:
+        output = {"dry_run": True, "plan": plan, "results": results, "errors": errors}
+        manifest_path = resolve_path(args.manifest, Path.cwd()) or args.manifest
+        write_json(manifest_path, output)
+        LOGGER.info("Wrote dry-run manifest %s", manifest_path)
+        return 0
+
     if "vmf3" in products:
         model = str(trop_cfg.get("model") or "").upper()
         if model and model != "VMF3":
@@ -601,15 +653,19 @@ def main() -> int:
 
             def _vmf3() -> None:
                 files = download_vmf3_product(
-                    start,
-                    stop,
+                    vmf_start,
+                    vmf_stop,
                     vmf_dir,
                     product_type=str(vmf_type),
                     grid=str(vmf_grid),
                     overwrite=args.overwrite,
                 )
                 append_result(results, "vmf3", files)
-                LOGGER.info("VMF3: %d file(s)", len(files))
+                LOGGER.info("VMF3 %s/%s: %d grid file(s)", vmf_type, vmf_grid, len(files))
+
+                orography = download_vmf_orography_product(str(vmf_grid), vmf_dir, overwrite=args.overwrite)
+                append_result(results, "vmf3:orography_ell", [orography])
+                LOGGER.info("VMF3 orography %s: %s", vmf_grid, orography)
 
             run_step("VMF3", _vmf3)
 
@@ -652,13 +708,13 @@ def main() -> int:
                 out_dir = mkdir(data_dir_override or cfg.data_dir or (cfg.data_file.parent if cfg.data_file else attitude_dir))
                 raw_files = download_attitude_files(
                     cfg.satellite,
-                    start,
-                    stop,
+                    attitude_start,
+                    attitude_stop,
                     out_dir,
                     overwrite=args.overwrite,
                     s3cfg=args.s3cfg,
                 )
-                raw_files = keep_overlapping_attitude_files(raw_files, start, stop)
+                raw_files = keep_overlapping_attitude_files(raw_files, attitude_start, attitude_stop)
 
                 attitude_output = cfg.data_file or (out_dir / f"qua_{cfg.satellite}.csv")
                 attitude_output.parent.mkdir(parents=True, exist_ok=True)
@@ -674,8 +730,8 @@ def main() -> int:
                 prepared_file = preprocess_attitude_product(
                     cfg.satellite,
                     raw_files,
-                    start,
-                    stop,
+                    attitude_start,
+                    attitude_stop,
                     nsec=float(nsec),
                     output_file=attitude_output,
                 )
@@ -711,13 +767,9 @@ def main() -> int:
             run_step(f"SP3 {satellite}", _sp3)
 
     output = {"plan": plan, "results": results, "errors": errors}
-    if args.manifest:
-        manifest_path = resolve_path(args.manifest, Path.cwd()) or args.manifest
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
-        LOGGER.info("Wrote manifest %s", manifest_path)
-
-    print(json.dumps(output, indent=2))
+    manifest_path = resolve_path(args.manifest, Path.cwd()) or args.manifest
+    write_json(manifest_path, output)
+    LOGGER.info("Wrote manifest %s", manifest_path)
 
     if errors:
         for error in errors:
