@@ -28,6 +28,7 @@ rnxdwn = "apps.rinex:main"
 sp3dwn = "apps.orbits:main"
 vmfdwn = "apps.vmf:main"
 prepyda = "apps.prepyda:main"
+ptroposnx = "apps.plot_tropo_sinex:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -164,6 +164,12 @@ def _time_to_mjd_and_sod(
 
     return mjd_days, sec_of_day
 
+def _deduplicate_attitude(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_index()
+
+    # For exact duplicate timestamps, keep the last product's value.
+    # Do not arithmetic-average quaternions.
+    return df[~df.index.duplicated(keep="last")]
 
 def _interpolate(
     df: pd.DataFrame,
@@ -180,7 +186,8 @@ def _interpolate(
     if df.empty:
         raise ValueError("Cannot interpolate an empty dataframe")
 
-    df = df.sort_index().groupby(df.index).mean()
+    # df = df.sort_index().groupby(df.index).mean()
+    df = _deduplicate_attitude(df)
 
     source_times = atime.Time(df.index.values, scale="tt").mjd
 
