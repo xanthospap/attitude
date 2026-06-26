@@ -8,7 +8,7 @@ scripts instead of shelling out to them:
 
   * RINEX       -> sources.ign.download_rinex
   * VMF3 grids  -> sources.vmf.download_vmf
-  * Attitude    -> sources.cddis/copernicus download + preprocessors.attitude.preprocess_attitude
+  * Attitude    -> sources.cddis/copernicus/cryosat download + preprocessors.attitude.preprocess_attitude
   * SP3 orbits  -> sources.ign/download_orbits or sources.cddis.download_orbits
   * Sat mass    -> sources.ids.download_satmass, if requested or present in YAML
 
@@ -384,8 +384,10 @@ def download_attitude_files(
     *,
     overwrite: bool,
     s3cfg: Path | None,
+    user: str | None = None,
+    password: str | None = None,
 ) -> list[Path]:
-    from sources import cddis, copernicus
+    from sources import cddis, copernicus, cryosat
     from sources.attitude import SATELLITE_INFO
 
     sat = satellite.lower()
@@ -414,6 +416,17 @@ def download_attitude_files(
             base_url=info["base_url"],
             overwrite=overwrite,
             s3cfg=s3cfg,
+        )
+    elif source == "cryosat":
+        files = cryosat.download_attitude(
+            satellite=sat,
+            start=start,
+            end=stop,
+            output_dir=output_dir,
+            base_path=info["base_url"],
+            overwrite=overwrite,
+            user=user,
+            password=password,
         )
     elif source == "ign":
         raise NotImplementedError("SWOT/IGN attitude source adapter is not migrated yet")
@@ -537,6 +550,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--attitude-every-sec", type=float, default=None, help="Attitude interpolation interval. Default: per-satellite YAML satellite-attitude[].every_sec/nsec or 5")
     parser.add_argument("--s3cfg", type=Path, default=None, help="Copernicus S3 config for attitude products")
+    parser.add_argument("--attitude-ftp-user", default=None, help="FTPS username for attitude products such as CryoSat-2. Default: CRYOSAT_FTP_USER")
+    parser.add_argument("--attitude-ftp-password", default=None, help="FTPS password for attitude products such as CryoSat-2. Default: CRYOSAT_FTP_PASSWORD")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     return parser
 
@@ -713,6 +728,8 @@ def main() -> int:
                     out_dir,
                     overwrite=args.overwrite,
                     s3cfg=args.s3cfg,
+                    user=args.attitude_ftp_user,
+                    password=args.attitude_ftp_password,
                 )
                 raw_files = keep_overlapping_attitude_files(raw_files, attitude_start, attitude_stop)
 

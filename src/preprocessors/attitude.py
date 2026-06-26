@@ -10,6 +10,7 @@ import pandas as pd
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
+from parsers.cryosat_attitude import read_cryosat_quaternion_file
 from parsers.swot_attitude import read_swot_qsolp_xml
 
 
@@ -19,8 +20,14 @@ logger = logging.getLogger(__name__)
 JASON_SATELLITES = {"ja1", "ja2", "ja3"}
 SENTINEL_SATELLITES = {"s3a", "s3b", "s6a"}
 SWOT_SATELLITES = {"swo"}
+CRYOSAT_SATELLITES = {"cs2"}
 
-SUPPORTED_SATELLITES = JASON_SATELLITES | SENTINEL_SATELLITES | SWOT_SATELLITES
+SUPPORTED_SATELLITES = (
+    JASON_SATELLITES
+    | SENTINEL_SATELLITES
+    | SWOT_SATELLITES
+    | CRYOSAT_SATELLITES
+)
 
 QUATERNION_COLUMNS = ["q0", "q1", "q2", "q3"]
 SOLAR_PANEL_COLUMNS = ["left_panel", "right_panel"]
@@ -85,6 +92,9 @@ def read_attitude_file(satellite: str, qfile: str | Path) -> pd.DataFrame:
     if satellite == "swo" and _is_qsolp(name):
         return read_swot_qsolp_xml(qfile)
 
+    if satellite in CRYOSAT_SATELLITES:
+        return read_cryosat_quaternion_file(qfile)
+
     if satellite == "ja1":
         if _is_qbody(name):
             return _read_text_attitude_file(
@@ -135,6 +145,7 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
 
     Jason and SWOT files are treated as UTC.
     Sentinel files are treated as GPST, represented as TAI after adding 19 seconds.
+    CryoSat-2 AUX_PROQUA data-block times are treated as TAI.
     """
 
     satellite = satellite.lower()
@@ -145,6 +156,9 @@ def _fix_time(satellite: str, df: pd.DataFrame) -> pd.DataFrame:
     elif satellite in SENTINEL_SATELLITES:
         tai_datetimes = df["date_time"] + np.timedelta64(19, "s")
         tt = atime.Time(tai_datetimes.to_numpy(), scale="tai").tt
+
+    elif satellite in CRYOSAT_SATELLITES:
+        tt = atime.Time(df["date_time"].to_numpy(), scale="tai").tt
 
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
@@ -191,12 +205,17 @@ def _interpolate(
 
     source_times = atime.Time(df.index.values, scale="tt").mjd
 
+    if len(source_times) < 2:
+        raise ValueError("At least two unique attitude epochs are required for interpolation")
+
+    if nsec <= 0:
+        raise ValueError("Interpolation interval nsec must be positive")
+
     if times is None:
-        times = np.arange(
-            start=source_times[0],
-            stop=source_times[-1],
-            step=nsec / 86400.0,
-        )
+        step = nsec / 86400.0
+        n_steps = int(np.floor((source_times[-1] - source_times[0]) / step)) + 1
+        times = source_times[0] + np.arange(n_steps, dtype=float) * step
+        times = times[times <= source_times[-1]]
 
     if all(col in df.columns for col in QUATERNION_COLUMNS):
         logger.info("Interpolating body quaternions")
@@ -371,6 +390,19 @@ def _process_swot_files(
     )
 
 
+def _process_cryosat_files(
+    satellite: str,
+    nsec: float,
+    qfns: list[str | Path],
+) -> pd.DataFrame:
+    files = [Path(file) for file in qfns]
+
+    dfs = [_fix_time(satellite, read_attitude_file(satellite, file)) for file in files]
+
+    df, _ = _interpolate(pd.concat(dfs), nsec)
+    return _to_output_index(df)
+
+
 def _process_sentinel_files(
     satellite: str,
     nsec: float,
@@ -408,32 +440,33 @@ def _clip_output_range(
     df: pd.DataFrame,
     start=None,
     end=None,
+    requested_time_scale: str = "utc",
 ) -> pd.DataFrame:
     """
-    Clip output dataframe indexed by (MJDay, SecOfDay) to [start, end).
+    Clip output dataframe indexed by TT (MJDay, SecOfDay) to [start, end).
 
-    start/end are naive datetimes interpreted in TT-output comparison space.
-    For this CLI use case, that is acceptable because the preprocessor already
-    converted all file times to TT before output.
+    CLI/YAML request datetimes are interpreted as UTC by default and converted
+    to TT before comparison.  This avoids dropping/keeping samples off by the
+    current UTC-to-TT offset.
     """
 
     if start is None and end is None:
         return df
 
-    index_times = atime.Time(
-        df.index.get_level_values("MJDay").to_numpy()
-        + df.index.get_level_values("SecOfDay").to_numpy() / 86400.0,
-        format="mjd",
-        scale="tt",
-    ).to_datetime()
+    index_mjd = (
+        df.index.get_level_values("MJDay").to_numpy(dtype=float)
+        + df.index.get_level_values("SecOfDay").to_numpy(dtype=float) / 86400.0
+    )
 
     mask = np.ones(len(df), dtype=bool)
 
     if start is not None:
-        mask &= index_times >= start
+        start_mjd = atime.Time(start, scale=requested_time_scale).tt.mjd
+        mask &= index_mjd >= start_mjd
 
     if end is not None:
-        mask &= index_times < end
+        end_mjd = atime.Time(end, scale=requested_time_scale).tt.mjd
+        mask &= index_mjd < end_mjd
 
     return df.loc[mask]
 
@@ -466,6 +499,9 @@ def preprocess_attitude(
 
     elif satellite in SWOT_SATELLITES:
         df = _process_swot_files(satellite, nsec, files)
+
+    elif satellite in CRYOSAT_SATELLITES:
+        df = _process_cryosat_files(satellite, nsec, files)
 
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")

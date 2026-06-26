@@ -55,6 +55,13 @@ SATELLITE_INFO = {
         "base_url": "pub/doris/ancillary/quaternions/swo",
         "data_types": ["qbody", "qsolp"],
     },
+    "cs2": {
+        "name": "CryoSat-2",
+        "source": "cryosat",
+        "launch_year": 2010,
+        "base_url": "AUX_PROQUA",
+        "data_types": ["AUX_PROQUA"],
+    },
 }
 
 

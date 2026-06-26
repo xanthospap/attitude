@@ -5,7 +5,7 @@ import datetime as dt
 import logging
 from pathlib import Path
 
-from sources import cddis, copernicus
+from sources import cddis, copernicus, cryosat
 from sources.attitude import SATELLITE_INFO, product_overlaps_range
 from preprocessors.attitude import preprocess_attitude
 
@@ -58,6 +58,8 @@ def download_attitude_files(
     save_dir,
     overwrite: bool = False,
     s3cfg=None,
+    user: str | None = None,
+    password: str | None = None,
 ) -> list[Path]:
     satellite = satellite.lower()
     info = SATELLITE_INFO[satellite]
@@ -82,6 +84,18 @@ def download_attitude_files(
             base_url=info["base_url"],
             overwrite=overwrite,
             s3cfg=s3cfg,
+        )
+
+    if info["source"] == "cryosat":
+        return cryosat.download_attitude(
+            satellite=satellite,
+            start=start,
+            end=end,
+            output_dir=save_dir,
+            base_path=info["base_url"],
+            overwrite=overwrite,
+            user=user,
+            password=password,
         )
 
     if info["source"] == "ign":
@@ -143,10 +157,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-u",
+        "--username",
+        default=None,
+        help=(
+            "Username for sources that require one, such as CryoSat FTPS. "
+            "For CryoSat this can also be set with CRYOSAT_FTP_USER."
+        ),
+    )
+
+    parser.add_argument(
         "-p",
         "--password",
         default=None,
-        help="Password for sources that require one.",
+        help=(
+            "Password for sources that require one, such as CryoSat FTPS. "
+            "For CryoSat this can also be set with CRYOSAT_FTP_PASSWORD."
+        ),
     )
 
     parser.add_argument(
@@ -214,6 +241,8 @@ def main() -> None:
             save_dir=args.save_dir,
             overwrite=args.overwrite,
             s3cfg=args.s3cfg,
+            user=args.username,
+            password=args.password,
         )
 
     output_file = preprocess_attitude(
