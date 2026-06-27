@@ -376,6 +376,12 @@ def download_sp3_product(
     return [Path(file) for file in files]
 
 
+def has_attitude_source(satellite: str) -> bool:
+    from sources.attitude import SATELLITE_INFO
+
+    return satellite.lower() in SATELLITE_INFO
+
+
 def download_attitude_files(
     satellite: str,
     start: dt.datetime,
@@ -718,7 +724,12 @@ def main() -> int:
 
             run_step(f"satmass {satellite}", _satmass)
 
-        if "attitude" in products:
+        if "attitude" in products and not has_attitude_source(satellite):
+            LOGGER.info(
+                "Skipping attitude %s: no attitude/quaternion source is configured for this satellite",
+                satellite,
+            )
+        elif "attitude" in products:
             def _attitude(cfg: SatelliteConfig = sat_cfg) -> None:
                 out_dir = mkdir(data_dir_override or cfg.data_dir or (cfg.data_file.parent if cfg.data_file else attitude_dir))
                 raw_files = download_attitude_files(
