@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 from pathlib import Path
 
 import requests
@@ -19,6 +20,27 @@ from sources.orbits import (
 
 logger = logging.getLogger(__name__)
 
+EARTHDATA_TOKEN_ENV = "EARTHDATA_TOKEN"
+
+
+def _earthdata_headers() -> dict[str, str]:
+    """Return Authorization headers if EARTHDATA_TOKEN is set in the environment."""
+    token = os.environ.get(EARTHDATA_TOKEN_ENV, "").strip()
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+
+def _check_auth_redirect(response: requests.Response, url: str) -> None:
+    """Raise a helpful RuntimeError when CDDIS redirected to the Earthdata login page."""
+    if "urs.earthdata.nasa.gov" in response.url or response.headers.get("content-type", "").startswith("text/html"):
+        hint = (
+            f"CDDIS redirected to Earthdata authentication for {url}. "
+            f"Set the {EARTHDATA_TOKEN_ENV} environment variable to a valid "
+            "Earthdata bearer token (https://urs.earthdata.nasa.gov/user-tokens)."
+        )
+        raise RuntimeError(hint)
+
 
 @retry(
     retry_on_exceptions=(
@@ -33,12 +55,14 @@ def list_directory(url: str, timeout: float = 60.0) -> list[str]:
     """
     Return filenames from a CDDIS directory listing.
 
-    CDDIS supports the `*?list` suffix.
+    CDDIS supports the `*?list` suffix.  When the EARTHDATA_TOKEN environment
+    variable is set its value is sent as an Earthdata bearer token.
     """
 
     url = url.rstrip("/")
-    response = requests.get(f"{url}/*?list", timeout=timeout)
+    response = requests.get(f"{url}/*?list", headers=_earthdata_headers(), timeout=timeout)
     response.raise_for_status()
+    _check_auth_redirect(response, url)
 
     filenames: list[str] = []
 
@@ -123,8 +147,9 @@ def download_url(
 
     tmp_file = output_file.with_suffix(output_file.suffix + ".part")
 
-    with requests.get(url, stream=True, timeout=timeout) as response:
+    with requests.get(url, headers=_earthdata_headers(), stream=True, timeout=timeout) as response:
         response.raise_for_status()
+        _check_auth_redirect(response, url)
 
         with tmp_file.open("wb") as fout:
             for chunk in response.iter_content(chunk_size=chunk_size):
