@@ -36,6 +36,21 @@ For some satellites quaternion files are archived and downloaded from [Copernicu
 (e.g. Sentinel missions). To download these you will need a [.s3cfg](https://documentation.dataspace.copernicus.eu/APIs/S3.html) 
 file, placed at the user's home directory.
 
+### Note for CryoSat-2 Quaternion Products
+You will need credentials to use the software for downloading CryoSat-2 quaternion files. These should be 
+requested by ESA, as [explained here](https://earth.esa.int/eogateway/missions/cryosat/data). Before using 
+any program requesting CryoSat-2 quaternion products, users should export the credentials; e.g.
+
+```bash
+export CRYOSAT_FTP_USER="USERNAME"
+export CRYOSAT_FTP_PASSWORD="PASSWORD"
+prepattitude   -s cs2 \
+  -b 2024-01-02T00:00:00 \
+  -e 2024-01-03T00:00:00 \
+  -d data \
+  -o data/qua_cs2.csv
+```
+
 ## Data & Products not Listed Here
 
 ### Space-Weather Data
@@ -68,12 +83,16 @@ the output file contains date/time information in the **TT timescale** (regardle
   | `s3a`        | Sentinel-3A | 2016      | [Copernicus](https://dataspace.copernicus.eu/)                          |
   | `s3b`        | Sentinel-3B | 2018      | [Copernicus](https://dataspace.copernicus.eu/)                          |
   | `s6a`        | Sentinel-6A | 2020      | [Copernicus](https://dataspace.copernicus.eu/)                          |
+  | `cs2`        | CryoSat-2   | 2010      | [ESA](https://earth.esa.int/eogateway/missions/cryosat/data), [specs](https://earth.esa.int/eogateway/documents/20142/37627/CryoSat-Quaternion-Products-Format-Specifications.pdf) |
 
 #### Jason satellites
 `MJDay SoD Q0 Q1 Q2 Q3 LP RP`
 
 
 #### Sentinel satellites
+`MJDay SoD Q0 Q1 Q2 Q3`
+
+#### CryoSat-2 satellite
 `MJDay SoD Q0 Q1 Q2 Q3`
 
 ## License
