@@ -20,3 +20,6 @@ attitude.code-workspace
 
 # config files
 .s3cfg
+
+# data folder
+data/
