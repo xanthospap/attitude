@@ -5,6 +5,7 @@ import datetime as dt
 import logging
 from pathlib import Path
 
+from products.config import parse_utc_datetime
 from sources import ign
 
 
@@ -19,10 +20,8 @@ def parse_datetime(value: str) -> dt.datetime:
         2024-01-02 12:30:00
     """
 
-    value = value.strip().replace("Z", "")
-
     try:
-        return dt.datetime.fromisoformat(value)
+        return parse_utc_datetime(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
             f"Invalid datetime {value!r}. " "Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."
@@ -71,7 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "-z",
+        "--decompress",
         "--uncompress",
+        dest="uncompress",
         action="store_true",
         help="Uncompress downloaded .Z files after downloading.",
     )
@@ -114,7 +115,8 @@ def main() -> None:
     )
 
     if not files:
-        raise SystemExit("ERROR: no RINEX files were downloaded.")
+        logger.warning("No RINEX files were available for the requested interval.")
+        return
 
     for file in files:
         print(file)

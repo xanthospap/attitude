@@ -17,6 +17,7 @@ dependencies = [
     "numpy>=2.2.3",
     "opnieuw>=3.0.0",
     "pandas>=2.2.3",
+    "PyYAML>=6.0.2",
     "requests>=2.32.3",
     "scipy>=1.14",
 ]
@@ -27,6 +28,11 @@ satmass = "apps.satmass:main"
 rnxdwn = "apps.rinex:main"
 sp3dwn = "apps.orbits:main"
 vmfdwn = "apps.vmf:main"
+dpoddwn = "apps.aux_downloads:main_dpod"
+eopdwn = "apps.aux_downloads:main_eop"
+swdwn = "apps.aux_downloads:main_space_weather"
+satmandwn = "apps.aux_downloads:main_satman"
+aod1bdwn = "apps.aux_downloads:main_aod1b"
 prepyda = "apps.prepyda:main"
 ptroposnx = "apps.plot_tropo_sinex:main"
 
@@ -37,7 +43,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/apps",
-    "src/downloaders",
     "src/parsers",
     "src/preprocessors",
     "src/products",

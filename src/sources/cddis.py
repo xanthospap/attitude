@@ -8,6 +8,7 @@ import requests
 from opnieuw import retry
 
 from sources.attitude import product_overlaps_range, years_to_scan_for_range
+from sources.files import existing_variant, is_nonempty_file
 
 from sources.orbits import (
     CDDIS_ORBITS_BASE_URL,
@@ -118,8 +119,10 @@ def download_url(
 
     output_file = output_dir / url.rstrip("/").split("/")[-1]
 
-    if output_file.exists() and not overwrite:
-        return output_file
+    if not overwrite:
+        found = existing_variant(output_file)
+        if found is not None:
+            return found
 
     tmp_file = output_file.with_suffix(output_file.suffix + ".part")
 
@@ -131,6 +134,9 @@ def download_url(
                 if chunk:
                     fout.write(chunk)
 
+    if not is_nonempty_file(tmp_file):
+        tmp_file.unlink(missing_ok=True)
+        raise OSError(f"download produced an empty file: {output_file}")
     tmp_file.replace(output_file)
 
     return output_file

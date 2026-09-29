@@ -5,7 +5,9 @@ import datetime as dt
 import logging
 from pathlib import Path
 
+from products.config import parse_utc_datetime
 from sources import cddis, ign
+from sources.files import decompress_file
 from sources.orbits import DEFAULT_ANALYSIS_CENTER
 
 
@@ -20,10 +22,8 @@ def parse_datetime(value: str) -> dt.datetime:
         2024-01-02 12:30:00
     """
 
-    value = value.strip().replace("Z", "")
-
     try:
-        return dt.datetime.fromisoformat(value)
+        return parse_utc_datetime(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
             f"Invalid datetime {value!r}. " "Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."
@@ -94,7 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "-z",
+        "--decompress",
         "--uncompress",
+        dest="uncompress",
         action="store_true",
         help="Uncompress downloaded .Z files after downloading.",
     )
@@ -145,13 +147,7 @@ def download_sp3_files(args) -> list[Path]:
         )
 
     if source == "cddis":
-        if args.uncompress:
-            logger.warning(
-                "-z is currently implemented for IGN downloads only. "
-                "CDDIS files will be downloaded compressed."
-            )
-
-        return cddis.download_orbits(
+        files = cddis.download_orbits(
             satellite=args.satellite,
             start=args.begin,
             end=args.end,
@@ -160,6 +156,9 @@ def download_sp3_files(args) -> list[Path]:
             version=args.version,
             overwrite=args.overwrite,
         )
+        if args.uncompress:
+            files = [decompress_file(path, overwrite=args.overwrite) for path in files]
+        return files
 
     raise ValueError(f"Unsupported source: {source}")
 
@@ -179,7 +178,8 @@ def main() -> None:
     files = download_sp3_files(args)
 
     if not files:
-        raise SystemExit("ERROR: no SP3 files were downloaded.")
+        logger.warning("No SP3 files were available for the requested interval.")
+        return
 
     for file in files:
         print(file)

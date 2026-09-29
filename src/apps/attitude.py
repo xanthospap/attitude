@@ -5,6 +5,7 @@ import datetime as dt
 import logging
 from pathlib import Path
 
+from products.config import parse_utc_datetime
 from sources import cddis, copernicus, cryosat
 from sources.attitude import SATELLITE_INFO, product_overlaps_range
 from preprocessors.attitude import preprocess_attitude
@@ -20,10 +21,8 @@ def parse_datetime(value: str) -> dt.datetime:
         2024-01-01 12:30:00
     """
 
-    value = value.strip().replace("Z", "")
-
     try:
-        return dt.datetime.fromisoformat(value)
+        return parse_utc_datetime(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
             f"Invalid datetime {value!r}. " "Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."

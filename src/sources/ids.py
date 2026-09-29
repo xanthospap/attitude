@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
+from sources.files import download_to_path
 from sources.satmass import satmass_filename, satmass_url
 
 
@@ -30,23 +29,13 @@ def download_file(
     IDS satellite mass files are served over FTP.
     """
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_file = output_dir / (filename or filename_from_url(url))
-
-    if output_file.exists() and not overwrite:
-        return output_file
-
-    tmp_file = output_file.with_suffix(output_file.suffix + ".part")
-
-    with urlopen(url, timeout=timeout) as response:
-        with tmp_file.open("wb") as fout:
-            shutil.copyfileobj(response, fout)
-
-    tmp_file.replace(output_file)
-
-    return output_file
+    output_file = Path(output_dir) / (filename or filename_from_url(url))
+    return download_to_path(
+        url,
+        output_file,
+        overwrite=overwrite,
+        timeout=timeout,
+    )
 
 
 def download_satmass(

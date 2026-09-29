@@ -1,99 +1,195 @@
-# Product Download & Preprocessing Facilities for DORIS
+# DORIS/POD Product Preparation
+
+This package downloads and, where needed, decompresses the external products
+used by `dpod`.  It provides small product-specific commands and the `prepyda`
+orchestrator, which reads paths and the processing interval from a dpod YAML
+configuration.
 
 ## Installation
 
-Affter cloning, you can use `pip` to install the package, e.g.
-`pip install .` or `pip install -e .` for an editable version. Pick the latter 
-if you need to edit the source code.
-
-## Products, Data and Executables
-
-| Product Type   | Program                          | Notes        |
-| ------------   | -------------------------------  | -------------|
-| attitude files | `prepattitude`                   | Download and pre-process satellite-specific (measured) attitude files |
-| RINEX (data)   | `rnxdwn`                         | Download DORIS RINEX files |
-| orbits         | `sp3dwn`                         | Download (final) satellite-specific `sp3c` file(s) |
-| VMF            | `vmfdwn`                         | Download [VMF](https://vmf.geo.tuwien.ac.at/) product files. For now, we only handle gridded `V3GR` VMF3-specific files |
-| satellite mass | `satmass`                        | Download satellite-specific mass history files |
-| all            | `prepyda`                        | Download all products/data abovev, based on a a yaml file |
-
-Information on the data/products can be found in [products](docs/products.md). The `Program` 
-column above lists the programs available system-wide once you install the project.
-
-## Usage
-
-For usage type any program name followed by `-h` or `--help`. 
-
-## Credentials
-
-### Note for CDDIS Web Archive
-For some satellites quaternion files are archived and downloaded from [CDDIS](https://cddis.nasa.gov/) 
-(e.g. JASON[123] missions). To download these you will need a [.netrc](https://cddis.nasa.gov/Data_and_Derived_Products/CreateNetrcFile.html) 
-file.
-
-### Note for Copernicus Web Archive
-For some satellites quaternion files are archived and downloaded from [Copernicus](https://dataspace.copernicus.eu/) 
-(e.g. Sentinel missions). To download these you will need a [.s3cfg](https://documentation.dataspace.copernicus.eu/APIs/S3.html) 
-file, placed at the user's home directory.
-
-### Note for CryoSat-2 Quaternion Products
-You will need credentials to use the software for downloading CryoSat-2 quaternion files. These should be 
-requested by ESA, as [explained here](https://earth.esa.int/eogateway/missions/cryosat/data). Before using 
-any program requesting CryoSat-2 quaternion products, users should export the credentials; e.g.
-
 ```bash
-export CRYOSAT_FTP_USER="USERNAME"
-export CRYOSAT_FTP_PASSWORD="PASSWORD"
-prepattitude   -s cs2 \
-  -b 2024-01-02T00:00:00 \
-  -e 2024-01-03T00:00:00 \
-  -d data \
-  -o data/qua_cs2.csv
+python -m pip install .
 ```
 
-## Data & Products not Listed Here
+Use `python -m pip install -e .` for an editable development installation.
 
-### Space-Weather Data
+## Commands
 
-Space-weather data can be downloaded from [CelesTrak](https://celestrak.org/SpaceData/) in `csv` format (do not try 
-downloading the older `legacy` format, use the current standard).
+| Command | Product |
+| --- | --- |
+| `rnxdwn` | Daily DORIS RINEX observations from IGN |
+| `dpoddwn` | DPOD SINEX and frequency-correction files from IGN |
+| `vmfdwn` | VMF3 V3GR grids and ellipsoidal orography |
+| `eopdwn` | IERS C04 Earth-orientation parameters |
+| `aod1bdwn` | AOD1B RL06/RL07 dealiasing or RL06 atmospheric tides |
+| `swdwn` | CelesTrak `SW-Last5Years.csv` |
+| `satmass` | IDS/CNES satellite mass history |
+| `satmandwn` | IDS/CNES satellite maneuver history |
+| `sp3dwn` | Satellite-specific reference SP3 orbits |
+| `prepattitude` | Download and preprocess measured attitude products |
+| `prepyda` | Prepare every applicable product configured in a dpod YAML file |
 
-### Earth Orientation Parameters
+SP3 downloading is deliberately standalone.  A dpod YAML file does not specify
+the reference-orbit archive, analysis center, version, or input SP3 filename;
+therefore `prepyda` does not attempt to choose one.
 
-These data files can be downloaded from [IERS](https://hpiers.obspm.fr/iers/eop/), using either the `C04/14` or the `C04/20` series. A quick link to the latest file is 
-[https://hpiers.obspm.fr/iers/eop/eopc04_20_v3/eopc04.1962-now](https://hpiers.obspm.fr/iers/eop/eopc04_20_v3/eopc04.1962-now)
+Every command documents its complete interface through `--help`.
 
-## Attitude Download & Pre-Processing
+## All-in-one preparation
 
-The output file is a space delimited tabular file.  The columns depend on the satellite "family". Note that 
-the output file contains date/time information in the **TT timescale** (regardless of satellite or input file(s)).
+```bash
+prepyda app/dpod.yaml
+```
 
-  - `MJDay` is Modified Julian day (integer) in TT,
-  - `SoD` are the seconds of day, i.e. seconds passed since the start of `MJDay` (fractional) in TT,
-  - `Q0` is the real part of the quaternion,
-  - `Q1`, `Q2`, `Q3` are the imaginary parts,
-  - `LP` and `RP` are the rotation angles of the left and right panel, respectively (Jason
-    satellites.)
+Relative paths in the YAML are resolved below the current working directory,
+not below the directory containing the YAML file.  A different root can be
+selected explicitly:
 
-### Available Satellites:
+```bash
+prepyda app/dpod.yaml --root-dir=/home/user/foo/bar
+```
 
-  | Satellite Id | Name        | Launch Yr | Archive                                                                 |
-  | ------------ | ----------- | --------- | ----------------------------------------------------------------------- |
-  | `ja3`        | Jason-3     | 2016      | [CDDIS](https://cddis.nasa.gov/archive/doris/ancillary/quaternions/ja3) |
-  | `s3a`        | Sentinel-3A | 2016      | [Copernicus](https://dataspace.copernicus.eu/)                          |
-  | `s3b`        | Sentinel-3B | 2018      | [Copernicus](https://dataspace.copernicus.eu/)                          |
-  | `s6a`        | Sentinel-6A | 2020      | [Copernicus](https://dataspace.copernicus.eu/)                          |
-  | `cs2`        | CryoSat-2   | 2010      | [ESA](https://earth.esa.int/eogateway/missions/cryosat/data), [specs](https://earth.esa.int/eogateway/documents/20142/37627/CryoSat-Quaternion-Products-Format-Specifications.pdf) |
+With this command and the YAML value:
 
-#### Jason satellites
-`MJDay SoD Q0 Q1 Q2 Q3 LP RP`
+```yaml
+eop: data/eopc04.1962-now
+```
 
+the target is:
 
-#### Sentinel satellites
-`MJDay SoD Q0 Q1 Q2 Q3`
+```text
+/home/user/foo/bar/data/eopc04.1962-now
+```
 
-#### CryoSat-2 satellite
-`MJDay SoD Q0 Q1 Q2 Q3`
+`--products` restricts preparation to named product families:
+
+```bash
+prepyda app/dpod.yaml --products rinex vmf3 eop
+```
+
+The available names are printed by `prepyda --help`.  Unknown names are
+rejected by the command-line parser.  With `--products all`, a handler acts
+only when the corresponding YAML field exists and is applicable; unrelated
+YAML sections are ignored.
+
+The YAML parser intentionally does not enforce the complete dpod schema.  It
+does reject duplicate YAML keys, duplicate satellite entries, and unknown
+satellite identifiers because these are ambiguous and likely mistakes.
+
+## UTC and interpolation boundaries
+
+All user-supplied epochs are UTC.  A datetime without a timezone is interpreted
+as UTC.  A datetime with `Z` or an explicit offset is converted to UTC before
+archive filenames and coverage intervals are computed.
+
+Products used by interpolation include their bracketing records:
+
+- VMF3 includes `floor(start, 6 h)` through `ceil(stop, 6 h)`;
+- AOD1B includes a three-hour margin on both sides of the processing interval;
+- attitude preparation uses a 30-minute margin on both sides.
+
+## Existing files, compression, and missing products
+
+Before downloading, the software always searches for both the requested path
+and common compressed/uncompressed variants.  A local file is reusable only if
+it exists, is a regular file, and is nonempty.  This is intentionally the only
+general validation because the products have heterogeneous formats.
+
+Decompression is enabled by default.  The following single-file compression
+types are supported:
+
+- gzip (`.gz`);
+- bzip2 (`.bz2`);
+- xz (`.xz`);
+- Unix compress (`.Z`, using `gzip` or `uncompress`);
+- ZIP containing exactly one regular file.
+
+Compressed inputs are retained.  Use `--no-decompress` to keep only the
+downloaded representation.  `--overwrite` refreshes products even if a
+nonempty local variant is present.
+
+A missing online file does not abort a preparation campaign.  It produces a
+warning, is listed as missing in `downloads.json`, and preparation continues.
+Invalid user configuration remains an immediate error.
+
+EOP and space-weather files are continuously updated.  Existing copies are
+scanned only for their first/last dates; if they do not cover the requested
+UTC interval, they are downloaded again.  Prepared attitude files are treated
+similarly using their first two numeric columns (`MJD(TT)` and seconds of day).
+
+## YAML fields consumed by `prepyda`
+
+The orchestrator currently recognizes only the fields needed to locate these
+products:
+
+```yaml
+a-priori-coordinates:
+  sinex: data/dpod2020_060.snx
+  dpod_frequency_cor: data/dpod2020_060_freq_corr.txt
+
+rinex:
+  from: 2024-01-05 00:00:00
+  to: 2024-01-06 12:00:00
+  data_dir: data
+
+troposphere:
+  model: VMF3
+  data_dir: data
+  grid: 5x5
+
+eop: data/eopc04.1962-now
+
+dealiasing:
+  model: AOD1B RL06
+  data-dir: data
+
+atmospheric-tide:
+  model: AOD1B RL06
+  data_dir: data/aod1b_tides
+  tide_atlas_from_aod1b:
+    k1: AOD1B_ATM_K1_06.asc
+    m2: AOD1B_ATM_M2_06.asc
+
+space-weather-data:
+  celestrak_csv: data/SW-Last5Years.csv
+
+satellite-attitude:
+  - satellite: cs2
+    cnes_sat_file: data/cs2mass.txt
+    cnes_maneuver: data/cs2man.txt
+    data_file: data/qua_cs2.csv
+```
+
+Files downloaded for scalar YAML fields are written with exactly the filename
+specified by the YAML after decompression.  Rename operations are logged.
+
+AOD1B dealiasing supports RL06 and RL07.  AOD1B atmospheric-tide files support
+RL06 only; requesting RL07 atmospheric tides is an immediate error until that
+product and its phase conventions are supported by dpod.
+
+## Data sources
+
+- DORIS RINEX and DPOD: IGN DORIS archive;
+- mass and maneuver histories: IDS/CNES satellite repository;
+- VMF3: TU Wien VMF data service;
+- EOP: IERS Earth Orientation Centre C04 series;
+- AOD1B: GFZ ISDC HTTPS archive;
+- space weather: CelesTrak;
+- reference SP3: IGN or authenticated CDDIS archive;
+- attitude: CDDIS, Copernicus Data Space, or CryoSat PDS depending on mission.
+
+CDDIS products require Earthdata credentials configured for `requests`, often
+through `.netrc`.  Copernicus attitude products normally require an S3
+configuration.  CryoSat attitude products require `CRYOSAT_FTP_USER` and
+`CRYOSAT_FTP_PASSWORD`, or the corresponding `prepyda` command-line options.
+
+## Manifest and exit behavior
+
+`prepyda` writes `downloads.json` below `--root-dir` by default.  It records
+available paths, unavailable items, warnings, and completeness per product.
+Missing remote products do not change the successful exit status.  Invalid
+YAML/configuration and local programming errors do.
 
 ## License
-Licensed under the MIT License.  See [LICENSE](LICENSE).
+
+Licensed under the MIT License.

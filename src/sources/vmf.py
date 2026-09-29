@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import shutil
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlopen
+
+from sources.files import download_to_path
 
 
 logger = logging.getLogger(__name__)
@@ -140,26 +140,12 @@ def download_url(
     overwrite: bool = False,
     timeout: float = 60.0,
 ) -> Path:
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_file = output_dir / filename_from_url(url)
-
-    if output_file.exists() and not overwrite:
-        logger.info("Using existing file %s", output_file)
-        return output_file
-
-    tmp_file = output_file.with_suffix(output_file.suffix + ".part")
-
-    logger.info("Downloading %s", url)
-
-    with urlopen(url, timeout=timeout) as response:
-        with tmp_file.open("wb") as fout:
-            shutil.copyfileobj(response, fout)
-
-    tmp_file.replace(output_file)
-
-    return output_file
+    return download_to_path(
+        url,
+        Path(output_dir) / filename_from_url(url),
+        overwrite=overwrite,
+        timeout=timeout,
+    )
 
 
 def download_vmf(

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-import shutil
-import subprocess
+import datetime as dt
 from ftplib import FTP
 from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import urlopen
+
+from sources.files import download_to_path, decompress_file
 
 from sources.rinex import rinex_urls_for_range
 from sources.orbits import (
@@ -21,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 def filename_from_url(url: str) -> str:
+    from urllib.parse import urlparse
+
     filename = Path(urlparse(url).path).name
 
     if not filename:
@@ -35,26 +36,12 @@ def download_file(
     overwrite: bool = False,
     timeout: float = 60.0,
 ) -> Path:
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_file = output_dir / filename_from_url(url)
-
-    if output_file.exists() and not overwrite:
-        logger.info("Using existing file %s", output_file)
-        return output_file
-
-    tmp_file = output_file.with_suffix(output_file.suffix + ".part")
-
-    logger.info("Downloading %s", url)
-
-    with urlopen(url, timeout=timeout) as response:
-        with tmp_file.open("wb") as fout:
-            shutil.copyfileobj(response, fout)
-
-    tmp_file.replace(output_file)
-
-    return output_file
+    return download_to_path(
+        url,
+        Path(output_dir) / filename_from_url(url),
+        overwrite=overwrite,
+        timeout=timeout,
+    )
 
 
 def uncompress_z_file(
@@ -70,31 +57,7 @@ def uncompress_z_file(
     Returns the uncompressed file path.
     """
 
-    compressed_file = Path(compressed_file)
-
-    if compressed_file.suffix != ".Z":
-        return compressed_file
-
-    output_file = compressed_file.with_suffix("")
-
-    if output_file.exists() and not overwrite:
-        logger.info("Using existing uncompressed file %s", output_file)
-        return output_file
-
-    if shutil.which("gzip") is not None:
-        command = ["gzip", "-d", "-f", str(compressed_file)]
-    elif shutil.which("uncompress") is not None:
-        command = ["uncompress", "-f", str(compressed_file)]
-    else:
-        raise RuntimeError(
-            "Cannot uncompress .Z file: neither 'gzip' nor 'uncompress' "
-            "was found on PATH."
-        )
-
-    logger.info("Uncompressing %s", compressed_file)
-    subprocess.run(command, check=True)
-
-    return output_file
+    return decompress_file(compressed_file, overwrite=overwrite)
 
 
 def download_rinex(
@@ -165,26 +128,12 @@ def download_url(
     overwrite: bool = False,
     timeout: float = 60.0,
 ) -> Path:
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_file = output_dir / filename_from_url(url)
-
-    if output_file.exists() and not overwrite:
-        logger.info("Using existing file %s", output_file)
-        return output_file
-
-    tmp_file = output_file.with_suffix(output_file.suffix + ".part")
-
-    logger.info("Downloading %s", url)
-
-    with urlopen(url, timeout=timeout) as response:
-        with tmp_file.open("wb") as fout:
-            shutil.copyfileobj(response, fout)
-
-    tmp_file.replace(output_file)
-
-    return output_file
+    return download_to_path(
+        url,
+        Path(output_dir) / filename_from_url(url),
+        overwrite=overwrite,
+        timeout=timeout,
+    )
 
 
 def find_orbit_urls(

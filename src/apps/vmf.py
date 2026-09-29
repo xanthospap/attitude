@@ -5,6 +5,9 @@ import datetime as dt
 import logging
 from pathlib import Path
 
+from products.config import parse_utc_datetime
+from products.prepare import VMF_OROGRAPHY_URLS
+from sources.files import download_to_path
 from sources.vmf import SUPPORTED_TYPES, download_vmf
 
 
@@ -19,10 +22,8 @@ def parse_datetime(value: str) -> dt.datetime:
         2024-01-02 12:30:00
     """
 
-    value = value.strip().replace("Z", "")
-
     try:
-        return dt.datetime.fromisoformat(value)
+        return parse_utc_datetime(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
             f"Invalid datetime {value!r}. " "Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."
@@ -113,7 +114,19 @@ def main() -> None:
     )
 
     if not files:
-        raise SystemExit("ERROR: no VMF files were downloaded.")
+        logger.warning("No VMF files were available for the requested interval.")
+
+    orography_url = VMF_OROGRAPHY_URLS[args.grid]
+    try:
+        files.append(
+            download_to_path(
+                orography_url,
+                args.save_dir / Path(orography_url).name,
+                overwrite=args.overwrite,
+            )
+        )
+    except Exception as exc:
+        logger.warning("VMF orography is unavailable: %s", exc)
 
     for file in files:
         print(file)

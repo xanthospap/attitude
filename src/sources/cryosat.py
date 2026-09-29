@@ -10,6 +10,7 @@ import socket
 import ssl
 
 from sources.attitude import dates_to_scan_for_range, product_overlaps_range
+from sources.files import existing_variant, is_nonempty_file
 
 
 logger = logging.getLogger(__name__)
@@ -221,14 +222,19 @@ def download_path(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / Path(remote_path).name
-    if output_file.exists() and not overwrite:
-        return output_file
+    if not overwrite:
+        found = existing_variant(output_file)
+        if found is not None:
+            return found
 
     tmp_file = output_file.with_suffix(output_file.suffix + ".part")
 
     with tmp_file.open("wb") as fout:
         ftp.retrbinary(f"RETR {remote_path}", fout.write)
 
+    if not is_nonempty_file(tmp_file):
+        tmp_file.unlink(missing_ok=True)
+        raise OSError(f"download produced an empty file: {output_file}")
     tmp_file.replace(output_file)
     return output_file
 
