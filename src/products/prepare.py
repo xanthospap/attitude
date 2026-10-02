@@ -347,11 +347,10 @@ def prepare_attitude(context: PreparationContext) -> ProductResult:
             continue
 
         try:
-            nsec = float(entry.get("every_sec", entry.get("nsec", 5.0)))
             prepared = preprocess_attitude(
                 satellite=satellite,
                 qfns=overlapping,
-                nsec=nsec,
+                nsec=context.attitude_every_sec,
                 start=requested_start,
                 end=requested_stop,
                 output_file=target,
@@ -365,7 +364,7 @@ def prepare_attitude(context: PreparationContext) -> ProductResult:
             ):
                 message = (
                     f"attitude: {prepared} does not fully cover the requested "
-                    "interpolation interval"
+                    "attitude interval"
                 )
                 LOGGER.warning(message)
                 result.warnings.append(message)

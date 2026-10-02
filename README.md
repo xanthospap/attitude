@@ -76,17 +76,60 @@ The YAML parser intentionally does not enforce the complete dpod schema.  It
 does reject duplicate YAML keys, duplicate satellite entries, and unknown
 satellite identifiers because these are ambiguous and likely mistakes.
 
-## UTC and interpolation boundaries
+## UTC and temporal coverage
 
 All user-supplied epochs are UTC.  A datetime without a timezone is interpreted
 as UTC.  A datetime with `Z` or an explicit offset is converted to UTC before
 archive filenames and coverage intervals are computed.
 
-Products used by interpolation include their bracketing records:
+Products that need temporal coverage include surrounding records:
 
 - VMF3 includes `floor(start, 6 h)` through `ceil(stop, 6 h)`;
 - AOD1B includes a three-hour margin on both sides of the processing interval;
 - attitude preparation uses a 30-minute margin on both sides.
+
+## Attitude preprocessing and sampling
+
+Attitude preprocessing preserves native source epochs by default.  ESA/IDS/CNES
+quaternion records are therefore not resampled merely to obtain an evenly
+spaced file.  Uneven source sampling is valid input for OrbitCommons.
+
+Before writing, attitude records are stable-sorted by epoch and exact duplicate
+epochs are removed; for overlaps, the later input occurrence is kept.  The
+final file is checked to guarantee unique, strictly increasing epochs.
+Quaternion records are never arithmetic-averaged during duplicate removal.
+
+For satellites whose products contain separate body-quaternion and solar-panel
+streams (currently Jason and SWOT), native mode keeps the **union** of the raw
+epochs from both streams.  At an epoch present in only one stream, the existing
+raw component is kept unchanged and only the missing component is interpolated:
+body quaternions use SLERP and panel angles use linear interpolation.  These
+component interpolations are logged.  Thus the two source streams do not need
+any exact timestamp matches.  If one stream does not temporally bracket an
+unmatched epoch from the other stream, preprocessing fails rather than silently
+dropping that raw epoch or extrapolating attitude.
+
+For example, this keeps native CryoSat-2 quaternion epochs:
+
+```bash
+prepattitude --begin 2024-01-05 --end 2024-01-07 --satellite cs2 \
+  --save-dir data
+```
+
+Uniform resampling is opt-in and is controlled only from the command line.
+Supplying `--every-sec` to either `prepattitude` or `prepyda` requests a regular
+output grid; all required attitude components are interpolated onto that grid:
+
+```bash
+prepattitude --begin 2024-01-05 --end 2024-01-07 --satellite cs2 \
+  --save-dir data --every-sec 5
+
+prepyda app/dpod.yaml --every-sec 5
+```
+
+There is deliberately no `every_sec`/`nsec` attitude-sampling field in the dpod
+YAML configuration.  Omitting the command-line option always means native
+sampling.
 
 ## Existing files, compression, and missing products
 

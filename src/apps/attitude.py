@@ -150,9 +150,12 @@ def build_parser() -> argparse.ArgumentParser:
         "-n",
         "--every-sec",
         dest="nsec",
-        default=5.0,
+        default=None,
         type=float,
-        help="Interpolation interval in seconds.",
+        help=(
+            "Interpolate to this sampling interval in seconds. "
+            "If omitted, preserve native source epochs."
+        ),
     )
 
     parser.add_argument(
@@ -225,6 +228,8 @@ def main() -> None:
 
     if args.end <= args.begin:
         raise SystemExit("ERROR: --end must be after --begin")
+    if args.nsec is not None and args.nsec <= 0:
+        raise SystemExit("ERROR: --every-sec must be positive")
 
     if args.preprocess_only:
         files = _keep_overlapping_files(

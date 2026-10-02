@@ -179,15 +179,34 @@ def _time_to_mjd_and_sod(
     return mjd_days, sec_of_day
 
 def _deduplicate_attitude(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_index()
+    """Return records in strict epoch order with exact duplicates removed.
 
-    # For exact duplicate timestamps, keep the last product's value.
-    # Do not arithmetic-average quaternions.
-    return df[~df.index.duplicated(keep="last")]
+    Sorting is stable so that, for duplicate epochs coming from overlapping
+    products, ``keep="last"`` deterministically keeps the later input record.
+    Quaternion records are never averaged.
+    """
+
+    df = df.sort_index(kind="stable")
+    num_duplicates = int(df.index.duplicated(keep="last").sum())
+    if num_duplicates:
+        logger.info("Removing %d duplicate attitude epoch(s)", num_duplicates)
+    df = df[~df.index.duplicated(keep="last")]
+
+    if not df.index.is_unique or not df.index.is_monotonic_increasing:
+        raise RuntimeError("Failed to construct strictly ordered attitude epochs")
+
+    return df
+
+
+def _native_attitude(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep native source epochs; only sort and remove exact duplicates."""
+
+    return _deduplicate_attitude(df)
+
 
 def _interpolate(
     df: pd.DataFrame,
-    nsec: float,
+    nsec: float | None,
     times: np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     """
@@ -208,10 +227,9 @@ def _interpolate(
     if len(source_times) < 2:
         raise ValueError("At least two unique attitude epochs are required for interpolation")
 
-    if nsec <= 0:
-        raise ValueError("Interpolation interval nsec must be positive")
-
     if times is None:
+        if nsec is None or nsec <= 0:
+            raise ValueError("Interpolation interval nsec must be positive")
         step = nsec / 86400.0
         n_steps = int(np.floor((source_times[-1] - source_times[0]) / step)) + 1
         times = source_times[0] + np.arange(n_steps, dtype=float) * step
@@ -262,6 +280,127 @@ def _interpolate(
     ).to_value(format="datetime64")
 
     return out, times
+
+
+def _fill_native_component(
+    source: pd.DataFrame,
+    target_index: pd.DatetimeIndex,
+    *,
+    component_name: str,
+) -> pd.DataFrame:
+    """Preserve native records and interpolate only missing target epochs.
+
+    ``target_index`` is normally the union of the body and panel source epochs.
+    Existing source values are copied unchanged.  Only epochs absent from this
+    component are interpolated.  Extrapolation is deliberately forbidden: if
+    the other component has a raw epoch outside this component's coverage, we
+    fail rather than silently discard or invent an endpoint value.
+    """
+
+    source = _native_attitude(source)
+    missing = target_index[~target_index.isin(source.index)]
+    out = source.reindex(target_index)
+
+    if len(missing) == 0:
+        logger.info(
+            "Native %s epochs already match all %d output epoch(s)",
+            component_name,
+            len(target_index),
+        )
+        return out
+
+    if len(source) < 2:
+        raise ValueError(
+            f"Cannot interpolate {component_name}: fewer than two unique source epochs"
+        )
+
+    if missing[0] < source.index[0] or missing[-1] > source.index[-1]:
+        raise ValueError(
+            f"Cannot preserve all native attitude records: {component_name} "
+            "does not bracket all epochs from the other attitude component"
+        )
+
+    logger.info(
+        "Interpolating %s at %d unmatched native epoch(s); source records remain unchanged",
+        component_name,
+        len(missing),
+    )
+
+    target_mjd = atime.Time(
+        missing.to_numpy(),
+        format="datetime64",
+        scale="tt",
+    ).mjd
+    interpolated, _ = _interpolate(source, nsec=None, times=target_mjd)
+    out.loc[missing, source.columns] = interpolated[source.columns].to_numpy()
+    return out
+
+
+def _merge_native_body_and_panel(
+    satellite: str,
+    df_body: pd.DataFrame,
+    df_panel: pd.DataFrame,
+    *,
+    start=None,
+    end=None,
+) -> pd.DataFrame:
+    """Merge body/panel streams on every native epoch in the output interval.
+
+    Records outside the requested interval remain available as interpolation
+    brackets but are not themselves output.  This is important when body and
+    panel timestamps are offset and have no exact matches inside the interval.
+    """
+
+    df_body = _native_attitude(df_body)
+    df_panel = _native_attitude(df_panel)
+    epochs = df_body.index.union(df_panel.index).sort_values()
+
+    if start is not None:
+        start_tt = atime.Time(start, scale="utc").tt.to_value(format="datetime64")
+        epochs = epochs[epochs >= start_tt]
+    if end is not None:
+        end_tt = atime.Time(end, scale="utc").tt.to_value(format="datetime64")
+        epochs = epochs[epochs < end_tt]
+
+    if len(epochs) == 0:
+        raise ValueError(f"No native attitude epochs remain for {satellite}")
+
+    body_interpolations = int((~epochs.isin(df_body.index)).sum())
+    panel_interpolations = int((~epochs.isin(df_panel.index)).sum())
+    logger.info(
+        "Native %s attitude merge: %d body epoch(s), %d panel epoch(s), "
+        "%d unique output epoch(s)",
+        satellite,
+        len(df_body),
+        len(df_panel),
+        len(epochs),
+    )
+
+    body = _fill_native_component(
+        df_body,
+        epochs,
+        component_name="body quaternions",
+    )
+    panel = _fill_native_component(
+        df_panel,
+        epochs,
+        component_name="solar-panel angles",
+    )
+
+    merged = pd.concat([body, panel], axis=1)
+    merged = _deduplicate_attitude(merged)
+
+    if len(merged) != len(epochs):
+        raise RuntimeError("Native body/panel merge lost attitude epochs")
+
+    logger.info(
+        "Native %s merge kept every unique raw epoch; interpolated %d body and "
+        "%d panel component value(s)",
+        satellite,
+        body_interpolations,
+        panel_interpolations,
+    )
+    return merged
 
 
 def _to_output_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -328,7 +467,10 @@ def _process_body_and_panel_files(
     satellite: str,
     body_files: list[Path],
     panel_files: list[Path],
-    nsec: float,
+    nsec: float | None,
+    *,
+    start=None,
+    end=None,
 ) -> pd.DataFrame:
     if not body_files:
         raise ValueError(f"No qbody files found for {satellite}")
@@ -345,18 +487,38 @@ def _process_body_and_panel_files(
         for file in panel_files
     ]
 
-    df_body, times = _interpolate(pd.concat(body_dfs), nsec)
-    df_panel, _ = _interpolate(pd.concat(panel_dfs), nsec, times=times)
+    source_body = pd.concat(body_dfs)
+    source_panel = pd.concat(panel_dfs)
 
-    return _to_output_index(
-        pd.merge(df_body, df_panel, left_index=True, right_index=True)
-    )
+    if nsec is None:
+        merged = _merge_native_body_and_panel(
+            satellite,
+            source_body,
+            source_panel,
+            start=start,
+            end=end,
+        )
+    else:
+        df_body, times = _interpolate(source_body, nsec)
+        df_panel, _ = _interpolate(source_panel, nsec, times=times)
+        merged = pd.merge(
+            df_body,
+            df_panel,
+            left_index=True,
+            right_index=True,
+            validate="one_to_one",
+        )
+
+    return _to_output_index(_deduplicate_attitude(merged))
 
 
 def _process_jason_files(
     satellite: str,
-    nsec: float,
+    nsec: float | None,
     qfns: list[str | Path],
+    *,
+    start=None,
+    end=None,
 ) -> pd.DataFrame:
     files = [Path(file) for file in qfns]
     files_by_name = {file.name.lower(): file for file in files}
@@ -369,13 +531,18 @@ def _process_jason_files(
         body_files=body_files,
         panel_files=panel_files,
         nsec=nsec,
+        start=start,
+        end=end,
     )
 
 
 def _process_swot_files(
     satellite: str,
-    nsec: float,
+    nsec: float | None,
     qfns: list[str | Path],
+    *,
+    start=None,
+    end=None,
 ) -> pd.DataFrame:
     files = [Path(file) for file in qfns]
 
@@ -387,25 +554,32 @@ def _process_swot_files(
         body_files=body_files,
         panel_files=panel_files,
         nsec=nsec,
+        start=start,
+        end=end,
     )
 
 
 def _process_cryosat_files(
     satellite: str,
-    nsec: float,
+    nsec: float | None,
     qfns: list[str | Path],
 ) -> pd.DataFrame:
     files = [Path(file) for file in qfns]
 
     dfs = [_fix_time(satellite, read_attitude_file(satellite, file)) for file in files]
 
-    df, _ = _interpolate(pd.concat(dfs), nsec)
+    source = pd.concat(dfs)
+    if nsec is None:
+        logger.info("Keeping native %s attitude epochs (no resampling)", satellite)
+        df = _native_attitude(source)
+    else:
+        df, _ = _interpolate(source, nsec)
     return _to_output_index(df)
 
 
 def _process_sentinel_files(
     satellite: str,
-    nsec: float,
+    nsec: float | None,
     qfns: list[str | Path],
     cleanup_extracted: bool = True,
 ) -> pd.DataFrame:
@@ -420,7 +594,12 @@ def _process_sentinel_files(
         for file in attitude_files
     ]
 
-    df, _ = _interpolate(pd.concat(dfs), nsec)
+    source = pd.concat(dfs)
+    if nsec is None:
+        logger.info("Keeping native %s attitude epochs (no resampling)", satellite)
+        df = _native_attitude(source)
+    else:
+        df, _ = _interpolate(source, nsec)
     df = _to_output_index(df)
 
     if cleanup_extracted:
@@ -471,16 +650,41 @@ def _clip_output_range(
     return df.loc[mask]
 
 
+def _validate_output_epoch_order(df: pd.DataFrame) -> None:
+    """Guarantee unique, strictly increasing epochs in the written product."""
+
+    if not df.index.is_unique:
+        raise RuntimeError("Prepared attitude output contains duplicate epochs")
+
+    if len(df) < 2:
+        return
+
+    days = df.index.get_level_values("MJDay").to_numpy(dtype=np.int64)
+    sod = df.index.get_level_values("SecOfDay").to_numpy(dtype=float)
+    strictly_later = (days[1:] > days[:-1]) | (
+        (days[1:] == days[:-1]) & (sod[1:] > sod[:-1])
+    )
+    if not np.all(strictly_later):
+        raise RuntimeError(
+            "Prepared attitude output epochs are not strictly chronological"
+        )
+
+
 def preprocess_attitude(
     satellite: str,
     qfns: list[str | Path],
-    nsec: float = 5.0,
+    nsec: float | None = None,
     start=None,
     end=None,
     output_file: str | Path | None = None,
 ) -> Path:
     """
-    Process local attitude files and write the interpolated output CSV.
+    Process local attitude files and write the canonical output CSV.
+
+    By default, source epochs are preserved.  For missions with separate body
+    and solar-panel streams, the output epoch set is the union of both native
+    streams; only the missing component is interpolated at unmatched epochs.
+    Supplying ``nsec`` explicitly instead requests uniform resampling.
 
     This function does not download anything.
     """
@@ -492,13 +696,17 @@ def preprocess_attitude(
         raise ValueError(f"No attitude files provided for satellite {satellite}")
 
     if satellite in JASON_SATELLITES:
-        df = _process_jason_files(satellite, nsec, files)
+        df = _process_jason_files(
+            satellite, nsec, files, start=start, end=end
+        )
 
     elif satellite in SENTINEL_SATELLITES:
         df = _process_sentinel_files(satellite, nsec, files)
 
     elif satellite in SWOT_SATELLITES:
-        df = _process_swot_files(satellite, nsec, files)
+        df = _process_swot_files(
+            satellite, nsec, files, start=start, end=end
+        )
 
     elif satellite in CRYOSAT_SATELLITES:
         df = _process_cryosat_files(satellite, nsec, files)
@@ -518,7 +726,19 @@ def preprocess_attitude(
 
     logger.info("Writing preprocessed attitude file to %s", output_file)
 
-    df.dropna().to_csv(
+    if nsec is None and df.isna().any().any():
+        raise ValueError(
+            "Native attitude output contains missing component values; "
+            "all raw epochs must be retained with complete records"
+        )
+
+    # Preserve the legacy behavior for explicitly resampled products, where a
+    # non-bracketed edge sample may remain NaN and is omitted.  Native mode
+    # never silently drops a raw epoch.
+    df = df.dropna()
+    _validate_output_epoch_order(df)
+
+    df.to_csv(
         output_file,
         sep=" ",
         float_format="%.12e",

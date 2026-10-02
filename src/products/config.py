@@ -119,6 +119,12 @@ def satellite_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
             raise ValueError(f"unknown satellite identifier {satellite!r}")
         if satellite in seen:
             raise ValueError(f"duplicate satellite entry {satellite!r}")
+        for key in ("every_sec", "nsec"):
+            if key in item:
+                raise ValueError(
+                    f"satellite-attitude[{index}].{key} is not a YAML option; "
+                    "use the command-line --every-sec option instead"
+                )
         seen.add(satellite)
         copied = dict(item)
         copied["satellite"] = satellite
@@ -138,6 +144,7 @@ class PreparationContext:
     attitude_s3cfg: Path | None = None
     attitude_user: str | None = None
     attitude_password: str | None = None
+    attitude_every_sec: float | None = None
 
 
 def make_context(
@@ -149,6 +156,7 @@ def make_context(
     attitude_s3cfg: str | Path | None = None,
     attitude_user: str | None = None,
     attitude_password: str | None = None,
+    attitude_every_sec: float | None = None,
 ) -> PreparationContext:
     start, stop = analysis_interval(config)
     return PreparationContext(
@@ -162,4 +170,5 @@ def make_context(
         attitude_s3cfg=None if attitude_s3cfg is None else Path(attitude_s3cfg).expanduser(),
         attitude_user=attitude_user,
         attitude_password=attitude_password,
+        attitude_every_sec=attitude_every_sec,
     )

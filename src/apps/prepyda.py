@@ -64,6 +64,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--s3cfg", type=Path, help="Copernicus S3 configuration")
     parser.add_argument("--attitude-ftp-user", help="CryoSat FTPS username")
     parser.add_argument("--attitude-ftp-password", help="CryoSat FTPS password")
+    parser.add_argument(
+        "--every-sec",
+        type=float,
+        default=None,
+        help=(
+            "Resample prepared attitude to this interval in seconds. "
+            "If omitted, preserve native source epochs."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -76,6 +85,9 @@ def main() -> int:
         format="{levelname}: {name}: {message}",
     )
 
+    if args.every_sec is not None and args.every_sec <= 0:
+        raise SystemExit("ERROR: --every-sec must be positive")
+
     config_path = args.config.expanduser().resolve()
     root = args.root_dir.expanduser().resolve()
     config = load_config(config_path)
@@ -87,6 +99,7 @@ def main() -> int:
         attitude_s3cfg=args.s3cfg,
         attitude_user=args.attitude_ftp_user,
         attitude_password=args.attitude_ftp_password,
+        attitude_every_sec=args.every_sec,
     )
 
     names = list(DEFAULT_PRODUCTS) if "all" in args.products else args.products
